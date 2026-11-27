@@ -6,6 +6,10 @@ export type EmploymentType = "full_time" | "part_time" | "contractor" | "intern"
 export type OnboardingPhase = "before_start" | "first_day" | "first_week" | "first_90_days";
 export type TaskOwnerRole = "people_team" | "it" | "manager" | "new_hire" | "buddy";
 export type OnboardingStatus = "in_progress" | "completed" | "cancelled";
+export type AppRole = "admin" | "hr" | "employee";
+export type ShiftKind = "whole_day" | "half_day";
+export type ShiftSource = "system_default" | "uploaded" | "manual";
+export type TimeRecordKind = "clock_in" | "clock_out";
 
 export interface Department {
   id: string;
@@ -43,6 +47,39 @@ export interface Employee {
   start_date: string; // ISO date
   end_date: string | null;
   avatar_url: string | null;
+  role: AppRole;
+  shift_code_id: string | null;
+}
+
+export interface ShiftCode {
+  id: string;
+  organization_id: string;
+  code: string;
+  name: string;
+  kind: ShiftKind;
+  start_time: string; // "HH:MM", local wall clock
+  end_time: string; // may be earlier than start_time for overnight shifts
+  break_minutes: number;
+  timezone: string;
+  grace_minutes: number;
+  source: ShiftSource;
+  is_default: boolean;
+  archived_at: string | null;
+}
+
+export interface TimeRecord {
+  id: string;
+  organization_id: string;
+  employee_id: string;
+  shift_code_id: string | null;
+  kind: TimeRecordKind;
+  recorded_at: string; // ISO timestamp, set by the server
+  work_date: string;
+  photo_path: string; // Storage key; the prototype stores a data URL here
+  latitude: number;
+  longitude: number;
+  accuracy_m: number;
+  device: string | null;
 }
 
 export interface EmploymentEvent {
@@ -105,4 +142,6 @@ export interface Database {
   onboarding_template_tasks: OnboardingTemplateTask[];
   onboarding_cases: OnboardingCase[];
   onboarding_tasks: OnboardingTask[];
+  shift_codes: ShiftCode[];
+  time_records: TimeRecord[];
 }

@@ -10,8 +10,12 @@ import type {
   OnboardingCase,
   OnboardingTask,
   OnboardingTemplateTask,
+  AppRole,
+  ShiftCode,
+  TimeRecord,
 } from "./types";
 import { addDays } from "./format";
+import { isWeekend, localToIso, phDefaultCodes, spanMinutes, zoned } from "./time";
 
 // Sample company for the prototype. All people are fictional.
 export const ORG_ID = "org-halden";
@@ -86,6 +90,27 @@ const rows: Row[] = [
   ["e38", "Victor", "Hale", "Account Executive", "dep-sales", "loc-sfo", "e11", "2022-04-04", "offboarded"],
 ];
 
+const ROLES: Record<string, AppRole> = { e04: "admin", e10: "hr", e22: "hr" };
+
+// ---- Shift codes -------------------------------------------------------------
+// The nine Philippine defaults, plus two codes an admin uploaded for the Singapore and Sydney offices.
+const shift_codes: ShiftCode[] = [
+  ...phDefaultCodes(ORG_ID),
+  { id: "sc-sg-d0900", organization_id: ORG_ID, code: "SG-D0900", name: "Singapore office day shift", kind: "whole_day", start_time: "09:00", end_time: "18:00", break_minutes: 60, timezone: "Asia/Singapore", grace_minutes: 10, source: "uploaded", is_default: false, archived_at: null },
+  { id: "sc-syd-d0830", organization_id: ORG_ID, code: "SYD-D0830", name: "Sydney office day shift", kind: "whole_day", start_time: "08:30", end_time: "17:30", break_minutes: 60, timezone: "Australia/Sydney", grace_minutes: 10, source: "uploaded", is_default: false, archived_at: null },
+];
+
+const SHIFT_ASSIGNMENTS: Record<string, string> = {
+  // Manila
+  e02: "sc-ph-d0900", e04: "sc-ph-d0800", e08: "sc-ph-d0900", e10: "sc-ph-d0800", e13: "sc-ph-d1000",
+  e16: "sc-ph-d1000", e19: "sc-ph-d0900", e21: "sc-ph-d0800", e22: "sc-ph-d0800", e25: "sc-ph-h0800",
+  e29: "sc-ph-d2200", e32: "sc-ph-d0900", e34: "sc-ph-d0900", e37: "sc-ph-d0800",
+  // Singapore
+  e03: "sc-sg-d0900", e06: "sc-sg-d0900", e12: "sc-sg-d0900", e23: "sc-sg-d0900", e27: "sc-sg-d0900",
+  // Sydney
+  e09: "sc-syd-d0830", e17: "sc-syd-d0830", e28: "sc-syd-d0830", e30: "sc-syd-d0830", e35: "sc-syd-d0830",
+};
+
 const slug = (s: string) =>
   s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z]+/g, "");
 
@@ -108,6 +133,8 @@ const employees: Employee[] = rows.map(([id, first, last, title, dep, loc, manag
   start_date: start,
   end_date: status === "offboarded" ? "2026-09-30" : null,
   avatar_url: null,
+  role: (ROLES[id] ?? "employee") as AppRole,
+  shift_code_id: SHIFT_ASSIGNMENTS[id] ?? null,
 }));
 
 const employment_events: EmploymentEvent[] = [];
@@ -192,6 +219,81 @@ const onboarding_tasks: OnboardingTask[] = [
   ...buildOnboardingTasks("ob-e36", "2026-12-08", "2026-11-25"),
 ];
 
+// ---- Time records ------------------------------------------------------------
+// Generated relative to the real current time so the attendance view always has a believable "today".
+
+export const SEED_NOW = new Date().toISOString();
+
+const OFFICE_GPS: Record<string, [number, number]> = {
+  "loc-mnl": [14.5547, 121.0244],
+  "loc-sin": [1.283, 103.851],
+  "loc-syd": [-33.8688, 151.2093],
+};
+const DEVICES = ["iPhone · Safari", "Android · Chrome", "Windows · Chrome", "Mac · Safari"];
+
+function rand(seed: string) {
+  let h = 2166136261;
+  for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return ((h >>> 0) % 10000) / 10000;
+}
+
+function recentWorkdays(nowIso: string, count: number): string[] {
+  const today = zoned(nowIso).date;
+  const days: string[] = [];
+  let d = addDays(today, -1);
+  while (days.length < count) {
+    if (!isWeekend(d)) days.unshift(d);
+    d = addDays(d, -1);
+  }
+  return isWeekend(today) ? days : [...days, today];
+}
+
+function buildTimeRecords(nowIso: string): TimeRecord[] {
+  const now = Date.parse(nowIso);
+  const out: TimeRecord[] = [];
+  const days = recentWorkdays(nowIso, 4);
+  const today = days[days.length - 1];
+
+  for (const e of employees) {
+    const shift = shift_codes.find((s) => s.id === e.shift_code_id);
+    if (!shift || e.status === "offboarded" || e.status === "on_leave") continue;
+    const gps = OFFICE_GPS[e.location_id ?? ""] ?? OFFICE_GPS["loc-mnl"];
+    days.forEach((day, di) => {
+      if (day < e.start_date) return;
+      const r = (k: string) => rand(`${e.id}${day}${k}`);
+      // Scripted exceptions so every status shows up.
+      if (e.id === "e13" && di === 1) return; // absent one day
+      if (e.id === "e32" && day === today) return; // hasn't clocked in today
+      let inOffset = Math.round(-14 + r("in") * 16); // mostly 14 min early to 2 min late
+      if (e.id === "e16" && (di === 0 || day === today)) inOffset = 18 + Math.round(r("late") * 10);
+      if (e.id === "e27" && di === 2) inOffset = 34;
+      let outOffset = Math.round(r("out") * 22);
+      if (e.id === "e19" && di === 1) outOffset = -45;
+
+      const startIso = localToIso(day, shift.start_time, shift.timezone);
+      const inAt = Date.parse(startIso) + inOffset * 60000;
+      const outAt = Date.parse(startIso) + (spanMinutes(shift) + outOffset) * 60000;
+      const mk = (kind: TimeRecord["kind"], at: number): TimeRecord => ({
+        id: `tr-${e.id}-${day}-${kind}`,
+        organization_id: ORG_ID,
+        employee_id: e.id,
+        shift_code_id: shift.id,
+        kind,
+        recorded_at: new Date(at).toISOString(),
+        work_date: day,
+        photo_path: `mock:${e.id}`,
+        latitude: +(gps[0] + (r(kind + "lat") - 0.5) * 0.0016).toFixed(6),
+        longitude: +(gps[1] + (r(kind + "lng") - 0.5) * 0.0016).toFixed(6),
+        accuracy_m: Math.round(6 + r(kind + "acc") * 30),
+        device: DEVICES[Math.floor(r("dev") * DEVICES.length)],
+      });
+      if (inAt < now) out.push(mk("clock_in", inAt));
+      if (outAt < now && !(e.id === "e12" && di === 2)) out.push(mk("clock_out", outAt)); // e12 forgot to clock out once
+    });
+  }
+  return out;
+}
+
 export const seed: Database = {
   departments,
   locations,
@@ -201,4 +303,6 @@ export const seed: Database = {
   onboarding_template_tasks,
   onboarding_cases,
   onboarding_tasks,
+  shift_codes,
+  time_records: buildTimeRecords(SEED_NOW),
 };

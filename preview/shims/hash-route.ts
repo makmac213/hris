@@ -8,6 +8,7 @@ export function toHash(href: string): string {
   if (parts[0] === "employees" && parts[1]) return `#employee-${parts[1]}`;
   if (parts[0] === "onboarding" && parts[1]) return `#onboarding-${parts[1]}`;
   if (parts[0] === "org-chart" && focus) return `#org-chart-${focus}`;
+  if (parts[0] === "time" && parts[1] === "shift-codes") return "#shift-codes";
   return `#${parts[0] ?? "employees"}`;
 }
 
@@ -17,6 +18,7 @@ export function fromHash(hash: string): { path: string; query: string } {
   if ((m = h.match(/^employee-(.+)$/))) return { path: `/employees/${m[1]}`, query: "" };
   if ((m = h.match(/^onboarding-(.+)$/))) return { path: `/onboarding/${m[1]}`, query: "" };
   if ((m = h.match(/^org-chart-(.+)$/))) return { path: "/org-chart", query: `focus=${m[1]}` };
+  if (h === "shift-codes") return { path: "/time/shift-codes", query: "" };
   return { path: `/${h}`, query: "" };
 }
 

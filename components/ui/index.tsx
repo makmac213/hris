@@ -111,7 +111,7 @@ export function FilterSelect<T extends string>({ label, value, onChange, options
 
 // ---- Dialog ---------------------------------------------------------------
 
-export function Dialog({ title, description, onClose, children, footer }: { title: string; description?: string; onClose: () => void; children: ReactNode; footer: ReactNode }) {
+export function Dialog({ title, description, onClose, children, footer, wide }: { title: string; description?: string; onClose: () => void; children: ReactNode; footer: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -131,7 +131,7 @@ export function Dialog({ title, description, onClose, children, footer }: { titl
   }, [onClose]);
   return (
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={ref}>
+      <div className={`dialog ${wide ? "dialog-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} ref={ref}>
         <header className="dialog-head">
           <div>
             <h2 id={titleId}>{title}</h2>

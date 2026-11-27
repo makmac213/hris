@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { indexById, today, useDb } from "@/lib/store";
+import { indexById, today, useCurrentUser, useDb } from "@/lib/store";
 import { displayName, formatDate, statusLabel } from "@/lib/format";
 import type { Employee, EmploymentStatus } from "@/lib/types";
 import { Button, EmptyState, FilterSelect, Icon, PersonCell, SearchInput, StatusBadge } from "@/components/ui";
@@ -13,6 +13,7 @@ type SortKey = "name" | "department" | "location" | "manager" | "start" | "statu
 
 export function DirectoryView() {
   const db = useDb();
+  const { canManage } = useCurrentUser();
   const router = useRouter();
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("");
@@ -77,7 +78,7 @@ export function DirectoryView() {
             {startingSoon > 0 && <> · <Link href="/onboarding" className="link">{startingSoon} starting soon</Link></>}
           </p>
         </div>
-        <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add employee</Button>
+        {canManage && <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add employee</Button>}
       </header>
 
       <div className="toolbar" role="search">

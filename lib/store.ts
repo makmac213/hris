@@ -5,7 +5,8 @@
 // (and React Query / server actions) without touching the views.
 
 import { useSyncExternalStore } from "react";
-import type { Database, Employee, OnboardingCase, OnboardingTask } from "./types";
+import type { AppRole, Database, Employee, OnboardingCase, OnboardingTask, ShiftCode, TimeRecord } from "./types";
+import { zoned } from "./time";
 import { buildOnboardingTasks, ORG_ID, seed, TEMPLATE_ID, TODAY } from "./mock-data";
 
 let db: Database = seed;
@@ -26,6 +27,33 @@ export function useDb(): Database {
 }
 
 export const today = () => TODAY;
+
+// ---- Session (who is signed in) ---------------------------------------------
+// The prototype lets you switch between an admin and an employee to see both sides.
+
+let currentUserId = "e04";
+const sessionListeners = new Set<() => void>();
+export function setCurrentUser(id: string) {
+  currentUserId = id;
+  sessionListeners.forEach((l) => l());
+}
+export function useCurrentUser(): { employee: Employee; role: AppRole; canManage: boolean } {
+  const id = useSyncExternalStore(
+    (l) => { sessionListeners.add(l); return () => sessionListeners.delete(l); },
+    () => currentUserId,
+    () => "e04",
+  );
+  const d = useDb();
+  const employee = d.employees.find((e) => e.id === id)!;
+  return { employee, role: employee.role, canManage: employee.role === "admin" || employee.role === "hr" };
+}
+
+export const PROTOTYPE_USERS = [
+  { id: "e04", label: "Marisol Dela Cruz", sub: "Admin" },
+  { id: "e10", label: "Leah Santos", sub: "HR" },
+  { id: "e16", label: "Miguel Ramos", sub: "Employee" },
+  { id: "e25", label: "Paolo Mendoza", sub: "Employee, half-day" },
+];
 
 // ---- Queries -------------------------------------------------------------
 
@@ -100,6 +128,8 @@ export function createEmployee(input: NewEmployeeInput): Employee {
     status: input.start_date > TODAY ? "onboarding" : "active",
     end_date: null,
     avatar_url: null,
+    role: "employee",
+    shift_code_id: db.shift_codes.find((s) => s.is_default)?.id ?? null,
   };
   const kase: OnboardingCase = {
     id: `ob-${id}`, employee_id: id, template_id: TEMPLATE_ID, buddy_id: null, status: "in_progress", created_at: TODAY,
@@ -139,4 +169,91 @@ export function setBuddy(caseId: string, buddyId: string | null) {
         ? { ...t, completed_at: buddyId ? (t.completed_at ?? `${TODAY}T09:00:00Z`) : null }
         : t),
   });
+}
+
+// ---- Timekeeping -----------------------------------------------------------
+
+export type NewShiftCode = Omit<ShiftCode, "id" | "organization_id" | "is_default" | "archived_at">;
+
+export function addShiftCodes(rows: NewShiftCode[]): ShiftCode[] {
+  const created = rows.map((r) => ({
+    ...r,
+    id: `sc-${r.code.toLowerCase()}-${Date.now().toString(36)}`,
+    organization_id: ORG_ID,
+    is_default: false,
+    archived_at: null,
+  }));
+  commit({ ...db, shift_codes: [...db.shift_codes, ...created] });
+  return created;
+}
+
+export function setDefaultShift(id: string) {
+  commit({ ...db, shift_codes: db.shift_codes.map((s) => ({ ...s, is_default: s.id === id })) });
+}
+
+/** Archives a code. People keep it until they're reassigned, so existing time records still make sense. */
+export function archiveShiftCode(id: string, archived: boolean) {
+  commit({
+    ...db,
+    shift_codes: db.shift_codes.map((s) => (s.id === id ? { ...s, archived_at: archived ? new Date().toISOString() : null, is_default: archived ? false : s.is_default } : s)),
+  });
+}
+
+export function assignShift(employeeIds: string[], shiftId: string | null) {
+  const ids = new Set(employeeIds);
+  commit({ ...db, employees: db.employees.map((e) => (ids.has(e.id) ? { ...e, shift_code_id: shiftId } : e)) });
+}
+
+export interface TimeCapture {
+  employeeId: string;
+  kind: TimeRecord["kind"];
+  photo: string; // data URL in the prototype; a Storage key in production
+  latitude: number;
+  longitude: number;
+  accuracy_m: number;
+  device: string;
+}
+
+/**
+ * In production this is a server action: the server stamps recorded_at, uploads the photo to the private
+ * time-photos bucket and rejects the insert if any of photo, latitude/longitude or accuracy is missing.
+ */
+export function recordTime(c: TimeCapture): TimeRecord {
+  if (!c.photo || !Number.isFinite(c.latitude) || !Number.isFinite(c.longitude)) {
+    throw new Error("A photo and a location are both required.");
+  }
+  const emp = db.employees.find((e) => e.id === c.employeeId)!;
+  const nowIso = new Date().toISOString();
+  const rec: TimeRecord = {
+    id: `tr-${c.employeeId}-${Date.now().toString(36)}`,
+    organization_id: ORG_ID,
+    employee_id: c.employeeId,
+    shift_code_id: emp.shift_code_id,
+    kind: c.kind,
+    recorded_at: nowIso,
+    work_date: workDateFor(emp, nowIso),
+    photo_path: c.photo,
+    latitude: c.latitude,
+    longitude: c.longitude,
+    accuracy_m: c.accuracy_m,
+    device: c.device,
+  };
+  commit({ ...db, time_records: [...db.time_records, rec] });
+  return rec;
+}
+
+/** Overnight shifts belong to the day they started: a 2 AM clock-out on a 10 PM shift counts for the day before. */
+export function workDateFor(emp: Employee, iso: string): string {
+  const shift = db.shift_codes.find((s) => s.id === emp.shift_code_id);
+  const z = zoned(iso, shift?.timezone);
+  if (shift && shift.end_time <= shift.start_time) {
+    const [eh, em] = shift.end_time.split(":").map(Number);
+    if (z.minutes < eh * 60 + em + 4 * 60) {
+      const d = new Date(`${z.date}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() - 1);
+      const open = db.time_records.some((r) => r.employee_id === emp.id && r.work_date === d.toISOString().slice(0, 10));
+      if (open) return d.toISOString().slice(0, 10);
+    }
+  }
+  return z.date;
 }

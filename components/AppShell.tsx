@@ -1,28 +1,50 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { useDb } from "@/lib/store";
+import { PROTOTYPE_USERS, setCurrentUser, useCurrentUser, useDb } from "@/lib/store";
 import { Avatar, Icon } from "@/components/ui";
 import type { IconName } from "@/components/ui/Icon";
 
-const CURRENT_USER_ID = "e04"; // Signed-in HR admin for the prototype
+type NavItem = { href: string; label: string; icon: IconName; count?: number; exact?: boolean };
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/employees";
+  const router = useRouter();
   const db = useDb();
+  const { employee: me, canManage, role } = useCurrentUser();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [pathname]);
 
-  const me = db.employees.find((e) => e.id === CURRENT_USER_ID)!;
   const activeOnboarding = db.onboarding_cases.filter((c) => c.status === "in_progress").length;
 
-  const nav: { href: string; label: string; icon: IconName; count?: number }[] = [
-    { href: "/employees", label: "Employees", icon: "users" },
-    { href: "/org-chart", label: "Org chart", icon: "org" },
-    { href: "/onboarding", label: "Onboarding", icon: "checklist", count: activeOnboarding },
-  ];
+  const groups: { title: string; items: NavItem[] }[] = canManage
+    ? [
+        { title: "People", items: [
+          { href: "/employees", label: "Employees", icon: "users" },
+          { href: "/org-chart", label: "Org chart", icon: "org" },
+          { href: "/onboarding", label: "Onboarding", icon: "checklist", count: activeOnboarding },
+        ] },
+        { title: "Time", items: [
+          { href: "/my-time", label: "My time", icon: "clock" },
+          { href: "/time", label: "Attendance", icon: "calendar", exact: true },
+          { href: "/time/shift-codes", label: "Shift codes", icon: "shift" },
+        ] },
+      ]
+    : [
+        { title: "Me", items: [{ href: "/my-time", label: "My time", icon: "clock" }] },
+        { title: "Company", items: [
+          { href: "/employees", label: "Employees", icon: "users" },
+          { href: "/org-chart", label: "Org chart", icon: "org" },
+        ] },
+      ];
+
+  const switchUser = (id: string) => {
+    setCurrentUser(id);
+    const next = PROTOTYPE_USERS.find((u) => u.id === id);
+    if (next?.sub.startsWith("Employee")) router.push("/my-time");
+  };
 
   return (
     <div className="shell">
@@ -39,33 +61,40 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="brand-name">Halden</span>
         </div>
         <nav aria-label="Main">
-          <p className="nav-group">People</p>
-          <ul>
-            {nav.map((n) => {
-              const active = pathname === n.href || pathname.startsWith(`${n.href}/`);
-              return (
-                <li key={n.href}>
-                  <Link href={n.href} className={`nav-link ${active ? "nav-active" : ""}`} aria-current={active ? "page" : undefined}>
-                    <Icon name={n.icon} />
-                    <span>{n.label}</span>
-                    {n.count ? <span className="nav-count" aria-label={`${n.count} in progress`}>{n.count}</span> : null}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="nav-group">Coming next</p>
-          <ul className="nav-soon">
-            <li><span className="nav-link" aria-disabled="true"><Icon name="calendar" /><span>Time off</span></span></li>
-            <li><span className="nav-link" aria-disabled="true"><Icon name="briefcase" /><span>Payroll</span></span></li>
-          </ul>
+          {groups.map((g) => (
+            <div key={g.title} className="nav-section">
+              <p className="nav-group">{g.title}</p>
+              <ul>
+                {g.items.map((n) => {
+                  const active = pathname === n.href || (!n.exact && pathname.startsWith(`${n.href}/`));
+                  return (
+                    <li key={n.href}>
+                      <Link href={n.href} className={`nav-link ${active ? "nav-active" : ""}`} aria-current={active ? "page" : undefined}>
+                        <Icon name={n.icon} />
+                        <span>{n.label}</span>
+                        {n.count ? <span className="nav-count" aria-label={`${n.count} in progress`}>{n.count}</span> : null}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
         </nav>
         <div className="me">
-          <Avatar person={me} size={32} />
-          <span className="person-text">
-            <span className="person-name">{me.first_name} {me.last_name}</span>
-            <span className="person-sub">People admin</span>
-          </span>
+          <div className="me-row">
+            <Avatar person={me} size={32} />
+            <span className="person-text">
+              <span className="person-name">{me.preferred_name ?? me.first_name} {me.last_name}</span>
+              <span className="person-sub">{role === "admin" ? "Admin" : role === "hr" ? "HR" : "Employee"}</span>
+            </span>
+          </div>
+          <label className="switcher">
+            <span>Prototype: view as</span>
+            <select value={me.id} onChange={(e) => switchUser(e.target.value)}>
+              {PROTOTYPE_USERS.map((u) => <option key={u.id} value={u.id}>{u.label} ({u.sub})</option>)}
+            </select>
+          </label>
         </div>
       </aside>
       {open && <div className="sidebar-scrim" onClick={() => setOpen(false)} />}
