@@ -731,6 +731,26 @@ a.nav-link:hover { background: var(--bg-hover); color: var(--ink); }
 .pay-period:hover { background: var(--bg-hover); }
 .pay-period-on { border-color: var(--line); background: var(--bg-subtle); }
 .pay-period span:first-child { font-weight: 500; }
+.pay-periods-head { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: var(--s3) 0 var(--s1) var(--s3); }
+.pay-periods-head:first-child { margin-top: 0; }
+.payslip-actions { display: flex; justify-content: flex-end; align-items: center; min-height: 36px; margin-bottom: var(--s3); }
+.print-only { display: none; }
+
+/* Printing a payslip: only the payslip, in light colors, with day-by-day time expanded. */
+@media print {
+  :root { color-scheme: light; }
+  .sidebar, .topbar, .sidebar-scrim, .no-print { display: none !important; }
+  .shell { display: block; min-height: 0; }
+  .main, .page { margin: 0; padding: 0; max-width: none; width: 100%; }
+  .payslip .table { width: 100%; }
+  .pay-layout { display: block; }
+  .panel.payslip-panel { border: 0; padding: 0; box-shadow: none; }
+  .print-only { display: block; }
+  .payslip-print-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: var(--s4); }
+  .payslip-print-head strong { font-size: 18px; }
+  details.days > summary { list-style: none; font-weight: 600; }
+  details.days > :not(summary) { display: block; }
+}
 
 /* ---- Payroll settings and pay items ---- */
 .settings-form { gap: var(--s4) var(--s4); }
