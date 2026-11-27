@@ -36,6 +36,7 @@ Every request sends `Authorization: Bearer <token>`. There are two kinds of toke
   - `payroll:read`, `payroll:write`
   - `leave:read`
   - `schedule:read`, `schedule:write` (a workforce management tool)
+  - `reports:read` (a BI tool or a data warehouse): every report except the audit trail
 - **Keys are shown once** when created. Only the hash is stored, along with the first 12 characters for display.
 - **Development tokens:** in memory mode only, outside production, `Bearer dev:<employee_id>` signs in as that person. The app refuses to start with dev tokens when `NODE_ENV=production`.
 
@@ -108,6 +109,8 @@ These are the same rules as the web app:
 | `GET /approvers?employee_id=` | Who can decide a person's requests | The person, their supervisor, approvers, admin, HR |
 | `GET`, `PUT`, `DELETE /schedule`, `GET /schedule/gaps`, `GET`, `PATCH /schedule/settings` | The operations schedule. See [scheduling.md](scheduling.md#api). | Operations, admin, HR; managers read their team |
 | `GET /notifications`, `POST /notifications/read` | Your notifications | The person |
+| `GET /reports` | The reports you can run, with their filters | Anyone (the list depends on role) |
+| `GET /reports/{key}` | Run one report. Filters as query parameters (`from`, `to`, `as_of`, `period_id`, `month`, `year`, `department_id`, `branch_id`, `client_id`, `group_by`, `q`). `format=csv` returns a CSV file. See [reports.md](reports.md#api). | By report: see [reports.md](reports.md#who-sees-what) |
 | `GET /openapi.json` | The machine-readable spec | Anyone |
 
 ### Not in v1

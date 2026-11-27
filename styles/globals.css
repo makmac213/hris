@@ -934,3 +934,90 @@ button.sc-gap:hover { background: var(--danger-bg); box-shadow: inset 0 0 0 1px 
 .sc-past { opacity: 0.6; }
 .sc-flagged { padding-right: 20px; }
 .sched-filters .search { width: 240px; flex: none; }
+
+/* ---- Reports and charts ----
+   Series colors are validated for light and dark surfaces (dataviz palette slots 1 and 2). Text never wears a
+   series color; identity sits on the mark, the legend swatch and the tooltip key. */
+:root { --viz-1: #257de0; --viz-2: #f47230; }
+:root[data-theme="dark"] { --viz-1: #338ced; --viz-2: #e76624; }
+
+.reports-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--s5); align-items: start; }
+@media (max-width: 960px) { .reports-layout { grid-template-columns: minmax(0, 1fr); } }
+.report-nav { position: sticky; top: var(--s4); display: flex; flex-direction: column; gap: var(--s4); }
+@media (max-width: 960px) { .report-nav { position: static; flex-direction: row; flex-wrap: wrap; gap: var(--s3); } }
+.report-nav-group { display: flex; flex-direction: column; gap: 2px; }
+.report-nav-group .pay-periods-head { margin: 0 0 var(--s1) var(--s3); }
+.report-nav-item { text-align: left; border: 0; background: transparent; color: var(--ink-2); padding: 6px var(--s3); border-radius: var(--r); font-size: 14px; transition: background var(--t-fast); }
+.report-nav-item:hover { background: var(--bg-hover); color: var(--ink); }
+.report-nav-item:focus-visible { outline: none; box-shadow: var(--focus); }
+.report-nav-on, .report-nav-on:hover { background: var(--accent-weak); color: var(--accent-text); font-weight: 500; }
+
+.report { display: flex; flex-direction: column; gap: var(--s4); }
+.report-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s4); flex-wrap: wrap; }
+.report-head h2 { margin: 0; font-size: 20px; }
+.report-head p { margin: var(--s1) 0 0; }
+.report-scope { color: var(--ink-3); font-size: 13px; }
+.report-actions { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.date-filter { display: inline-flex; align-items: center; gap: var(--s2); }
+.date-filter input {
+  height: 40px; padding: 0 12px; border-radius: var(--r); border: 1px solid var(--line-strong);
+  background: var(--bg); color: var(--ink); font: inherit;
+}
+.date-filter input:focus-visible { outline: none; box-shadow: var(--focus); }
+.report-empty { padding: var(--s5); text-align: center; border: 1px solid var(--line); border-radius: var(--r); }
+.report-table { overflow-x: auto; }
+.report-table .table { min-width: 640px; }
+.report-table tfoot td { font-weight: 600; border-top: 1px solid var(--line-strong); background: var(--bg-subtle); }
+.report-notes { display: flex; flex-direction: column; gap: var(--s1); color: var(--ink-2); font-size: 13px; }
+.report-notes p { margin: 0; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: var(--s3); }
+.kpi { display: flex; flex-direction: column; gap: 2px; padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--r); }
+.kpi-label { font-size: 13px; color: var(--ink-2); }
+.kpi-value { font-size: 24px; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.kpi-note { font-size: 13px; color: var(--ink-3); }
+
+.viz-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--s4); }
+.viz { margin: 0; padding: var(--s4); border: 1px solid var(--line); border-radius: var(--r); display: flex; flex-direction: column; gap: var(--s2); }
+.viz-title { font-size: 14px; font-weight: 600; }
+.viz-plot { position: relative; width: 100%; }
+.viz-plot svg { display: block; overflow: visible; }
+.viz-plot svg:focus-visible, .viz-plot rect:focus-visible, .viz-plot g:focus-visible { outline: none; }
+.viz-plot svg:focus-visible { box-shadow: var(--focus); border-radius: var(--r); }
+.viz-grid { stroke: var(--line); stroke-width: 1; }
+.viz-base { stroke: var(--line-strong); stroke-width: 1; }
+.viz-cross { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
+.viz-tick { fill: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.viz-cat { fill: var(--ink-2); font-size: 13px; }
+.viz-label { fill: var(--ink); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.viz-ring { stroke: var(--bg); stroke-width: 2; }
+.viz-mark { transition: opacity var(--t-fast); }
+.viz-plot svg:hover .viz-mark:not(.viz-on) { opacity: 0.55; }
+.viz-plot svg:not(:hover) .viz-mark { opacity: 1; }
+.viz-tip {
+  position: absolute; z-index: 5; pointer-events: none; min-width: 140px; padding: var(--s2) var(--s3);
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow-float); font-size: 13px;
+}
+.viz-tip-title { color: var(--ink-2); margin-bottom: 2px; }
+.viz-tip-row { display: flex; align-items: center; gap: var(--s2); }
+.viz-tip-row strong { font-variant-numeric: tabular-nums; }
+.viz-tip-row span:last-child { color: var(--ink-2); }
+.viz-key, .viz-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.viz-legend { display: flex; gap: var(--s4); flex-wrap: wrap; list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--ink-2); }
+.viz-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.viz-data > summary { cursor: pointer; font-size: 13px; color: var(--accent-text); width: max-content; }
+.viz-data > summary:focus-visible { outline: none; box-shadow: var(--focus); border-radius: 4px; }
+.viz-data .table-wrap { margin-top: var(--s2); max-height: 280px; overflow: auto; }
+.viz-data .table td, .viz-data .table th { padding: 6px var(--s3); font-size: 13px; }
+
+@media print {
+  .reports-layout { display: block; }
+  .viz, .kpi { break-inside: avoid; }
+  .viz-tip { display: none; }
+  .viz-data > :not(summary) { display: block; }
+  .report-table { overflow: visible; }
+  .report-table .table { min-width: 0; }
+}
+@media (forced-colors: active) {
+  .viz-mark, .viz-plot path { forced-color-adjust: none; }
+}

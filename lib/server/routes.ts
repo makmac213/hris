@@ -8,6 +8,7 @@ import * as req from "./services/requests";
 import * as pay from "./services/payroll";
 import * as org from "./services/org";
 import * as sched from "./services/schedule";
+import * as rep from "./services/reports";
 
 type Params = Record<string, string>;
 export interface Route {
@@ -54,6 +55,8 @@ export const ROUTES: Route[] = [
   { method: "PATCH", path: "/clients/{id}", tag: "Organization", summary: "Change or archive a client (archiving takes everyone off it)", who: "Admin, HR", body: org.UpdateClient, run: (c, p, _q, b) => org.updateClient(c, p.id, b) },
   { method: "POST", path: "/clients/{id}/members", tag: "Organization", summary: "Put people on a client account", who: "Admin, HR", body: org.Assign, run: (c, p, _q, b) => org.assignTo(c, "client", p.id, b) },
   { method: "DELETE", path: "/clients/{id}/members", tag: "Organization", summary: "Take people off a client account", who: "Admin, HR", body: org.Assign, run: (c, p, _q, b) => org.unassignClient(c, p.id, b) },
+  { method: "GET", path: "/reports", tag: "Reports", summary: "The reports the caller can run, with their filters", who: "Anyone (the list depends on role)", run: (c) => rep.listReports(c) },
+  { method: "GET", path: "/reports/{key}", tag: "Reports", summary: "Run a report. Filters as query parameters; format=csv returns text/csv", who: "Depends on the report: see docs/reports.md", run: (c, p, q) => rep.getReport(c, p.key, q) },
   { method: "GET", path: "/approval-settings", tag: "Requests", summary: "Which roles approve requests, besides each person's direct supervisor", who: "Anyone", run: (c) => req.getApprovalSettings(c) },
   { method: "PATCH", path: "/approval-settings", tag: "Requests", summary: "Turn HR or operations on or off as approvers (admin always approves)", who: "Admin, HR", body: req.ApprovalSettingsBody, run: (c, _p, _q, b) => req.putApprovalSettings(c, b) },
   { method: "GET", path: "/approvers", tag: "Requests", summary: "Who can decide a person's leave, overtime and correction requests", who: "The person, their supervisor, approvers, admin and HR", query: req.ApproversQuery, run: (c, _p, q) => req.getApprovers(c, q) },

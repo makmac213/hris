@@ -5,6 +5,7 @@
 // (and React Query / server actions) without touching the views.
 
 import { checkPunch, missingOutNotice } from "./punch";
+import { actorFor, diffDatabases } from "./audit";
 import { issuePayslips } from "./payslips";
 import { useSyncExternalStore } from "react";
 import { formatInstant } from "./time";
@@ -18,7 +19,9 @@ let db: Database = seed;
 const listeners = new Set<() => void>();
 
 function commit(next: Database) {
-  db = next;
+  // Every write is logged: who changed what (lib/audit.ts). The log is read by the audit reports.
+  const entries = diffDatabases(db, next, actorFor(db.employees.find((e) => e.id === currentUserId)), new Date().toISOString(), () => uid("aud"), ORG_ID);
+  db = entries.length ? { ...next, audit_log: [...entries, ...next.audit_log] } : next;
   listeners.forEach((l) => l());
 }
 
@@ -58,6 +61,7 @@ export function useCurrentUser(): { employee: Employee; role: AppRole; canManage
 
 export const PROTOTYPE_USERS = [
   { id: "e04", label: "Marisol Dela Cruz", sub: "Admin" },
+  { id: "e01", label: "Amara Okafor", sub: "Executive" },
   { id: "e10", label: "Leah Santos", sub: "HR" },
   { id: "e40", label: "Jerome Tolentino", sub: "Operations" },
   { id: "e41", label: "Angelica Santiago", sub: "Team lead" },

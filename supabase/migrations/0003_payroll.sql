@@ -201,11 +201,11 @@ create table pay_items (
   start_date       date not null,
   end_date         date,
   installments     integer check (installments > 0),
-  authorization    text,  -- reference to the signed authorization (DO 195-18); required unless the law authorizes it
+  "authorization"  text,  -- reference to the signed authorization (DO 195-18); required unless the law authorizes it
   created_by       uuid references employees(id),
   created_at       timestamptz not null default now(),
   check ((category = 'de_minimis') = (de_minimis_kind is not null)),
-  check (direction = 'earning' or category in ('sss_loan', 'pagibig_loan') or authorization is not null),
+  check (direction = 'earning' or category in ('sss_loan', 'pagibig_loan') or "authorization" is not null),
   check (end_date is null or end_date >= start_date)
 );
 create index pay_items_employee_idx on pay_items (employee_id, start_date);

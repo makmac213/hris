@@ -15,7 +15,7 @@ const SQL_NAME: Partial<Record<Table, string>> = { correction_requests: "time_co
 const sqlName = (t: Table) => SQL_NAME[t] ?? t;
 
 /** Tables with an organization_id column; the rest hang off an employee (or another org-scoped row). */
-const ORG_TABLES: Table[] = ["departments", "locations", "clients", "employees", "shift_codes", "time_records", "holidays", "payroll_periods", "payslips", "pay_item_types", "leave_types", "shift_assignments", "notifications"];
+const ORG_TABLES: Table[] = ["departments", "locations", "clients", "employees", "shift_codes", "time_records", "holidays", "payroll_periods", "payslips", "pay_item_types", "audit_log", "leave_types", "shift_assignments", "notifications"];
 const EMPLOYEE_TABLES: Table[] = [
   "employment_events", "employee_documents", "onboarding_cases", "compensation", "overtime_requests", "correction_requests",
   "employee_payroll_settings", "pay_items", "leave_requests", "leave_adjustments", "payroll_openings",
@@ -101,6 +101,10 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.sb.from("schedule_settings").upsert({ organization_id: orgId, ...patch } as never).select("horizon_days, short_notice_hours").single();
     if (error) throw new Error(`schedule_settings: ${error.message}`);
     return { ...DEFAULT_SCHEDULE_SETTINGS, ...(data as Partial<ScheduleSettings>) };
+  }
+
+  async appendAudit() {
+    // The audit trigger on each table writes the log in the same transaction (migration 0010).
   }
 
   async updateApprovalSettings(orgId: string, patch: Partial<ApprovalSettings>) {

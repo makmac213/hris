@@ -371,3 +371,37 @@ test("payslips: employees get their issued payslips; the open period only on req
   assert.equal((await call("GET", `/payslips/${encodeURIComponent(theirs)}`, { as: "e08" })).status, 403, "not even their manager");
   assert.equal((await call("GET", `/payslips/${encodeURIComponent(theirs)}`, { as: "e10" })).status, 200, "HR can");
 });
+
+test("reports: role-based, filters as query parameters, CSV export", async () => {
+  const list = await call("GET", "/reports", { as: "e01" });
+  assert.equal(list.status, 200);
+  assert.ok(list.body.data.some((r: { key: string }) => r.key === "executive"));
+  assert.ok(!list.body.data.some((r: { key: string }) => r.key === "payroll-register"));
+  assert.equal((await call("GET", "/reports/payroll-register", { as: "e01" })).status, 403);
+  assert.equal((await call("GET", "/reports/nope", { as: "e04" })).status, 404);
+
+  const hc = await call("GET", "/reports/headcount?group_by=branch", { as: "e10" });
+  assert.equal(hc.status, 200);
+  assert.equal(hc.body.columns[0].label, "Branch");
+
+  const res = await handle(new Request("http://localhost/api/v1/reports/turnover?from=2026-01-01&to=2026-12-31&format=csv", { headers: { authorization: "Bearer dev:e04" } }));
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type") ?? "", /text\/csv/);
+  const text = await res.text();
+  assert.match(text.split("\r\n")[0], /^Name,/);
+
+  const key = apiKey(["employees:read"]);
+  assert.equal((await call("GET", "/reports", { token: key })).status, 403, "needs reports:read");
+  const reader = apiKey(["reports:read"]);
+  assert.equal((await call("GET", "/reports/audit-trail", { token: reader })).status, 403, "keys never read the audit trail");
+  assert.equal((await call("GET", "/reports/contributions", { token: reader })).status, 200);
+});
+
+test("audit: API writes are logged with who made them", async () => {
+  const before = await call("GET", "/reports/audit-trail?q=approval", { as: "e04" });
+  await call("PATCH", "/approval-settings", { as: "e10", body: { approver_roles: ["hr", "operations"] } });
+  const after = await call("GET", "/reports/audit-trail?q=approval", { as: "e04" });
+  assert.equal(after.body.rows.length, before.body.rows.length + 1);
+  assert.equal(after.body.rows[0].actor, "Leah Santos");
+  assert.match(after.body.rows[0].changes, /approver_roles/);
+});

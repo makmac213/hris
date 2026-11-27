@@ -1,5 +1,6 @@
 // The /api/v1 request pipeline: authenticate, route, validate, run, and shape every response the same way.
 
+import { actorFor, diffDatabases } from "@/lib/audit";
 import { randomUUID } from "node:crypto";
 import { authenticate } from "./auth";
 import { ApiError } from "./errors";
@@ -47,10 +48,20 @@ export async function handle(req: Request, now: () => string = () => new Date().
     }
 
     const query = Object.fromEntries(url.searchParams);
+    const before = req.method !== "GET" && auth.repo.kind === "memory" ? await auth.repo.snapshot(auth.orgId) : null;
     const result = await m.route.run(ctx, m.params, query, body);
+    if (before) {
+      // Who changed what (lib/audit.ts). In Postgres a trigger does this instead.
+      const actor = auth.principal.kind === "key" ? { id: null, label: `API key ${auth.principal.key.prefix}` } : actorFor(auth.principal.employee);
+      await auth.repo.appendAudit(auth.orgId, diffDatabases(before, await auth.repo.snapshot(auth.orgId), actor, at, () => auth.repo.newId("aud"), auth.orgId));
+    }
     // A repeat of something already saved (e.g. the same punch from a second device) answers 200 with the original.
     const status = m.route.created && !(result as { duplicate?: boolean } | null)?.duplicate ? 201 : 200;
     if (idemKey) await auth.repo.putIdempotent(scope, idemKey, { status, body: result, created_at: at });
+    if (result && typeof result === "object" && "__csv" in result) {
+      const { __csv, filename } = result as { __csv: string; filename: string };
+      return new Response(__csv, { status: 200, headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${filename}"`, "x-request-id": requestId, "cache-control": "no-store" } });
+    }
     return json(status, result, requestId);
   } catch (e) {
     if (e instanceof ApiError) return json(e.status, errorBody(e), requestId);

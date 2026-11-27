@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { PROTOTYPE_USERS, canApprove, markNotificationsRead, setCurrentUser, today, useCurrentUser, useDb } from "@/lib/store";
 import { coverageGaps, datesFrom } from "@/lib/schedule";
+import { availableReports, viewerFor } from "@/lib/reports";
 import { Avatar, Icon } from "@/components/ui";
 import type { IconName } from "@/components/ui/Icon";
 
@@ -25,6 +26,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isManager = db.employees.some((e) => e.manager_id === me.id && e.status !== "offboarded");
   const openGaps = canSchedule ? coverageGaps(db, db.employees.filter((e) => e.status !== "offboarded"), datesFrom(today(), 14), today()).filter((g) => !g.cell.coveredBy).length : 0;
   const roleApproves = approverRoles(db).includes(me.role);
+  const seesReports = availableReports(viewerFor(db, me)).length > 0;
+  const reportsItem: NavItem = { href: "/reports", label: "Reports", icon: "chart" };
   const pendingForMe = [...db.overtime_requests, ...db.correction_requests, ...db.leave_requests].filter((r) => r.status === "pending" && canApprove(db, me, r.employee_id)).length;
 
   const groups: { title: string; items: NavItem[] }[] = canManage
@@ -34,6 +37,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           { href: "/org-chart", label: "Org chart", icon: "org" },
           { href: "/organization", label: "Organization", icon: "building" },
           { href: "/onboarding", label: "Onboarding", icon: "checklist", count: activeOnboarding },
+          reportsItem,
         ] },
         { title: "Time and pay", items: [
           { href: "/schedule", label: "Schedule", icon: "shift", count: openGaps },
@@ -54,6 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           { href: "/schedule", label: "Schedule", icon: "shift" as IconName, count: openGaps },
           ...(roleApproves ? [{ href: "/approvals", label: "Approvals", icon: "check" as IconName, count: pendingForMe }] : []),
         ] }] : []),
+        ...(seesReports ? [{ title: "Insights", items: [reportsItem] }] : []),
         { title: "Me", items: [
           { href: "/my-time", label: "My time", icon: "clock" },
           { href: "/my-leave", label: "My leave", icon: "sun" },
@@ -70,7 +75,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const switchUser = (id: string) => {
     setCurrentUser(id);
     const next = PROTOTYPE_USERS.find((u) => u.id === id);
-    if (next && !["Admin", "HR"].includes(next.sub)) router.push(next.sub === "Operations" ? "/schedule" : next.sub === "Manager" || next.sub === "Team lead" ? "/approvals" : "/my-time");
+    if (next && !["Admin", "HR"].includes(next.sub)) router.push(next.sub === "Executive" ? "/reports" : next.sub === "Operations" ? "/schedule" : next.sub === "Manager" || next.sub === "Team lead" ? "/approvals" : "/my-time");
   };
 
   return (
@@ -115,7 +120,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Avatar person={me} size={32} />
             <span className="person-text">
               <span className="person-name">{me.preferred_name ?? me.first_name} {me.last_name}</span>
-              <span className="person-sub">{role === "admin" ? "Admin" : role === "hr" ? "HR" : role === "operations" ? "Operations" : isManager ? "Manager" : "Employee"}</span>
+              <span className="person-sub">{role === "admin" ? "Admin" : role === "hr" ? "HR" : role === "operations" ? "Operations" : role === "executive" ? "Executive" : isManager ? "Manager" : "Employee"}</span>
             </span>
           </div>
           <label className="switcher">
