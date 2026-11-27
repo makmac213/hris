@@ -10,10 +10,11 @@ import { issuePayslips } from "./payslips";
 import { useSyncExternalStore } from "react";
 import { formatInstant } from "./time";
 import { formatDate } from "./format";
-import type { ApprovalSettings, Client, Department, Location, ScheduleSettings, LeaveAdjustment, LeaveRequest, LeaveType, SeparationReason, AppRole, Compensation, CorrectionKind, CorrectionRequest, Database, Employee, EmployeePayrollSettings, OnboardingCase, OnboardingTask, OvertimeRequest, PayItem, PayItemType, PayrollSettings, ShiftCode, TimeRecord } from "./types";
+import type { Loan, LoanPayment, LoanSettings, ApprovalSettings, Client, Department, Location, ScheduleSettings, LeaveAdjustment, LeaveRequest, LeaveType, SeparationReason, AppRole, Compensation, CorrectionKind, CorrectionRequest, Database, Employee, EmployeePayrollSettings, OnboardingCase, OnboardingTask, OvertimeRequest, PayItem, PayItemType, PayrollSettings, ShiftCode, TimeRecord } from "./types";
 import { type AssignmentInput, assignmentId, checkAssignments, leaveNotifications, lockReason, scheduleFor, toAssignments, workDateFor as workDateForDb } from "./schedule";
 import { buildOnboardingTasks, ORG_ID, seed, TEMPLATE_ID, TODAY } from "./mock-data";
 import { probationEndFor } from "./employment";
+import { buildLoan, buildRequest, decidedLoan, patchedLoan, validateDecision, validateLoan, validateLoanPatch, validateLoanRequest, validatePayment, type DecisionInput, type LoanInput, type LoanPatch, type LoanRequestInput } from "./loans";
 
 let db: Database = seed;
 const listeners = new Set<() => void>();
@@ -536,4 +537,57 @@ export function updateScheduleSettings(patch: Partial<ScheduleSettings>) {
 export function markNotificationsRead(recipientId: string, ids?: string[]) {
   const at = new Date().toISOString();
   commit({ ...db, notifications: db.notifications.map((n) => (n.recipient_id === recipientId && !n.read_at && (!ids || ids.includes(n.id)) ? { ...n, read_at: at } : n)) });
+}
+
+// ---- Loans (lib/loans.ts) ------------------------------------------------------------
+
+export function saveLoan(input: LoanInput, byId: string): { errors: Record<string, string>; loan?: Loan } {
+  const errors = validateLoan(db, input);
+  if (Object.keys(errors).length) return { errors };
+  const loan = buildLoan(input, uid("ln"), ORG_ID, byId, new Date().toISOString());
+  commit({ ...db, loans: [...db.loans, loan] });
+  return { errors, loan };
+}
+
+export function requestLoan(employeeId: string, input: LoanRequestInput): { errors: Record<string, string>; loan?: Loan } {
+  const emp = db.employees.find((e) => e.id === employeeId)!;
+  const errors = validateLoanRequest(db, emp, input, TODAY);
+  if (Object.keys(errors).length) return { errors };
+  const loan = buildRequest(input, emp, uid("ln"), ORG_ID, new Date().toISOString(), TODAY);
+  commit({ ...db, loans: [...db.loans, loan] });
+  return { errors, loan };
+}
+
+export function decideLoan(id: string, deciderId: string, input: DecisionInput): Record<string, string> {
+  const loan = db.loans.find((l) => l.id === id)!;
+  const errors = validateDecision(loan, input.approve, input, deciderId);
+  if (Object.keys(errors).length) return errors;
+  const next = decidedLoan(loan, input, deciderId, new Date().toISOString());
+  commit({ ...db, loans: db.loans.map((l) => (l.id === id ? next : l)) });
+  return {};
+}
+
+export function cancelLoanRequest(id: string) {
+  commit({ ...db, loans: db.loans.map((l) => (l.id === id && l.status === "requested" ? { ...l, status: "cancelled" as const } : l)) });
+}
+
+export function updateLoan(id: string, patch: LoanPatch): Record<string, string> {
+  const loan = db.loans.find((l) => l.id === id)!;
+  const errors = validateLoanPatch(loan, patch);
+  if (Object.keys(errors).length) return errors;
+  commit({ ...db, loans: db.loans.map((l) => (l.id === id ? patchedLoan(l, patch) : l)) });
+  return {};
+}
+
+export function recordLoanPayment(loanId: string, input: Pick<LoanPayment, "amount" | "paid_on" | "method" | "note">, byId: string): Record<string, string> {
+  const loan = db.loans.find((l) => l.id === loanId)!;
+  const errors = validatePayment(db, loan, input, TODAY);
+  if (Object.keys(errors).length) return errors;
+  const row: LoanPayment = { id: uid("lp"), loan_id: loanId, employee_id: loan.employee_id, paid_on: input.paid_on, amount: Math.round(input.amount * 100) / 100, method: input.method, note: input.note?.trim() || null, recorded_by: byId, recorded_at: new Date().toISOString() };
+  commit({ ...db, loan_payments: [...db.loan_payments, row] });
+  return {};
+}
+
+export function updateLoanSettings(patch: Partial<LoanSettings>) {
+  commit({ ...db, loan_settings: { ...db.loan_settings, ...patch } });
 }

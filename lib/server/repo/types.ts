@@ -5,6 +5,8 @@ import type { ApprovalSettings, AuditEntry, Database, PayrollSettings, ScheduleS
 
 /** Tables that hold rows. `payroll_settings`, `schedule_settings` and `approval_settings` are one object per organization, with their own methods. */
 export type Table = { [K in keyof Database]: Database[K] extends unknown[] ? K : never }[keyof Database];
+/** Settings objects (one row per organization) read and written through `putSettings`. Newer modules add theirs here. */
+export type SettingsKey = "loan_settings";
 export type Row<T extends Table> = Database[T][number];
 
 export type ApiScope =
@@ -40,6 +42,8 @@ export interface Repository {
   updateSettings(orgId: string, patch: Partial<PayrollSettings>): Promise<void>;
   updateScheduleSettings(orgId: string, patch: Partial<ScheduleSettings>): Promise<ScheduleSettings>;
   updateApprovalSettings(orgId: string, patch: Partial<ApprovalSettings>): Promise<ApprovalSettings>;
+  /** Merges a patch into one organization's settings object and returns the result. */
+  putSettings<K extends SettingsKey>(orgId: string, key: K, patch: Partial<Database[K]>): Promise<Database[K]>;
   /** Add change-log entries. Postgres writes its own from a trigger (migration 0010), so there this does nothing. */
   appendAudit(orgId: string, entries: AuditEntry[]): Promise<void>;
   newId(prefix: string): string;

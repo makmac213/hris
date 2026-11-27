@@ -7,6 +7,7 @@ import type { Database, Employee, SeparationReason } from "./types";
 import { addDays, formatDate } from "./format";
 import { computePayslip, effectiveItems, itemsFor, periodFor, peso, rates, RULES, thirteenthMonthPay, type PayLine, type Payslip } from "./payroll";
 import { convertibleDays, SIL_ID } from "./leave";
+import { balanceBefore, LOAN_KINDS } from "./loans";
 import { ageOn, creditedYears, separationLabel } from "./employment";
 import { annualTax, periodsFrom, yearToDate } from "./yearend";
 
@@ -141,6 +142,17 @@ export function finalPay(db: Database, employee: Employee, lastDay: string, reas
     if (item.category === "sss_loan" || item.category === "pagibig_loan") statutoryLoans.push(line);
     else if (item.authorization) deductions.push(line);
     else checks.push({ ok: false, text: `${item.label}: ${peso(left * item.amount)} unpaid, but there's no signed authorization on file, so it can't be deducted from final pay (Art. 113).` });
+  }
+  // Loans (lib/loans.ts): the balance left after the last payroll.
+  const after = periodFor(addDays(periodFor(lastDay).end_date, 1));
+  for (const loan of (db.loans ?? []).filter((l) => l.employee_id === e.id && (l.status === "active" || l.status === "paused"))) {
+    const left = balanceBefore(db, loan, after);
+    if (left <= 0.004) continue;
+    const info = LOAN_KINDS[loan.kind];
+    const line = { key: `bal-${loan.id}`, label: `${info.label}${loan.reference_no ? ` (${loan.reference_no})` : ""}, remaining balance`, detail: `${peso(loan.principal)} loan, balance after the last payroll`, amount: left };
+    if (info.agency) statutoryLoans.push(line);
+    else if (loan.authorization) deductions.push(line);
+    else checks.push({ ok: false, text: `${info.label}: ${peso(left)} unpaid, but there's no signed authorization on file, so it can't be deducted from final pay (Art. 113).` });
   }
 
   // Annualize the year up to the last day: final pay often brings a refund of excess withholding.

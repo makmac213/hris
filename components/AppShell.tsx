@@ -28,6 +28,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const roleApproves = approverRoles(db).includes(me.role);
   const seesReports = availableReports(viewerFor(db, me)).length > 0;
   const reportsItem: NavItem = { href: "/reports", label: "Reports", icon: "chart" };
+  const loanRequests = canManage ? db.loans.filter((l) => l.status === "requested" && l.employee_id !== me.id).length : 0;
   const pendingForMe = [...db.overtime_requests, ...db.correction_requests, ...db.leave_requests].filter((r) => r.status === "pending" && canApprove(db, me, r.employee_id)).length;
 
   const groups: { title: string; items: NavItem[] }[] = canManage
@@ -44,6 +45,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           { href: "/time", label: "Attendance", icon: "calendar", exact: true },
           { href: "/approvals", label: "Approvals", icon: "check", count: pendingForMe },
           { href: "/payroll", label: "Payroll", icon: "wallet" },
+          { href: "/loans", label: "Loans", icon: "receipt", count: loanRequests },
           { href: "/leave", label: "Leave policies", icon: "sun" },
           { href: "/time/shift-codes", label: "Shift codes", icon: "clock" },
         ] },

@@ -1021,3 +1021,4 @@ button.sc-gap:hover { background: var(--danger-bg); box-shadow: inset 0 0 0 1px 
 @media (forced-colors: active) {
   .viz-mark, .viz-plot path { forced-color-adjust: none; }
 }
+.my-loans { margin-top: var(--s6); }

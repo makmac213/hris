@@ -11,8 +11,20 @@
 | 3c | REST API `/api/v1` | PR #3 |
 | 4 | Departments, branches and clients; operations schedule with rotating rest days, leave gaps, cover and notifications; schedule drives attendance, leave days and payroll; approvals by direct supervisor plus configurable approver roles | `feature/scheduling` |
 | 5 | Reports: HR (headcount, turnover, attendance, tardiness, leave, probation), executive dashboard, payroll (register, SSS, PhilHealth and Pag-IBIG contributions, withholding, alphalist, 13th month), audit (audit trail, approvals, corrections); CSV and PDF export; the reports API | `feature/reports` |
+| 6 | Loans and advances: SSS and Pag-IBIG loans, company loans and cash advances with a balance and ledger; employee requests within company policy; balances in final pay; loan balance and remittance reports | [loans.md](loans.md) |
 
 ## Next
+
+The remaining gaps, built in this order, one pull request each:
+
+1. Loans and deductions (done, phase 6)
+2. Employee documents (201 file) with expiry alerts
+3. Discipline and incidents: notices to explain, hearings and sanctions under due process
+4. Performance: goals, reviews and probationary evaluations before regularization
+5. Recruitment: openings, applicants and offers into onboarding
+6. Benefits and claims: HMO and dependents, reimbursements, allowances
+7. Offboarding: clearance, asset return and the certificate of employment
+8. SaaS basics: multi-company tenants, single sign-on, subscription billing and announcements
 
 - **REST API** (`/api/v1`): built against the in-memory store. Next, connect Supabase, then move the web screens onto the same services. See [api.md](api.md).
 

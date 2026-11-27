@@ -22,7 +22,7 @@ const ENTITY: Record<string, string> = {
   pay_items: "Pay item", pay_item_types: "Pay type", leave_types: "Leave type", shift_codes: "Shift code", shift_assignments: "Shift",
   departments: "Department", locations: "Branch", clients: "Client", employment_events: "Employment event", onboarding_cases: "Onboarding",
   onboarding_tasks: "Onboarding task", employee_payroll_settings: "Payroll override", leave_adjustments: "Leave adjustment",
-  payroll_settings: "Payroll settings", schedule_settings: "Scheduling rules", approval_settings: "Approval roles", holidays: "Holiday",
+  loans: "Loan", loan_payments: "Loan payment", loan_settings: "Loan policy", payroll_settings: "Payroll settings", schedule_settings: "Scheduling rules", approval_settings: "Approval roles", holidays: "Holiday",
 };
 export const entityLabel = (t: string) => ENTITY[t] ?? t.replace(/_/g, " ");
 

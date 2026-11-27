@@ -10,7 +10,7 @@ Plan and reference for the reports module: HR reports, an executive dashboard, p
 | Headcount, Turnover | Yes | Yes | Yes | | | Yes |
 | Attendance, Tardiness, Leave usage | Yes | Yes | | Yes | Their direct reports | Yes |
 | Probation and regularization | Yes | Yes | | | | Yes |
-| Payroll register, Contributions, Withholding tax, Alphalist, 13th month | Yes | Yes | | | | Yes |
+| Payroll register, Contributions, Withholding tax, Alphalist, 13th month, Loan balances, Loan remittances | Yes | Yes | | | | Yes |
 | Approvals history, Corrections history | Yes | Yes | | | | Yes |
 | Audit trail | Yes | | | | | |
 
@@ -25,9 +25,9 @@ Every report lists the filters it uses, and the filters sit in one row above the
 | Filter | Query parameter | Used by |
 | --- | --- | --- |
 | Date range | `from`, `to` (default: the last 30 days up to today; attendance counts only days that are over) | Attendance, tardiness, leave usage, turnover, approvals, corrections, audit trail |
-| As of | `as_of` (default: today) | Headcount, probation, executive dashboard |
+| As of | `as_of` (default: today) | Headcount, probation, executive dashboard, loan balances |
 | Payroll period | `period_id` (default: the latest finalized) | Payroll register |
-| Month | `month`, as `YYYY-MM` | Contributions, withholding tax |
+| Month | `month`, as `YYYY-MM` | Contributions, withholding tax, loan remittances |
 | Year | `year` | Alphalist, 13th month |
 | Department, branch, client | `department_id`, `location_id`, `client_id` | People-based reports |
 | Group by | `group_by`: `department`, `branch` or `client` | Headcount, turnover, executive dashboard |
@@ -57,6 +57,8 @@ Every report lists the filters it uses, and the filters sit in one row above the
 - **Withholding tax (BIR 1601-C figures):** per person for a month, with total compensation, non-taxable pay, taxable pay and tax withheld.
 - **Alphalist (BIR 1604-C, annual):** per person for a year, with the annualized figures from [year-end tax](year-end-tax.md). It covers gross, non-taxable, mandatory contributions, taxable, tax due, tax withheld, the December adjustment, minimum wage earner status and substituted filing.
 - **13th month:** per person for a year, under PD 851. It shows the amount, the tax-free part (up to ₱90,000 together with other benefits) and the deadline, December 24.
+- **Loan balances:** every loan and advance still being paid as of a date, with amount, repaid, balance, per-cutoff deduction and the expected last deduction ([loans.md](loans.md)).
+- **Loan remittances:** what payroll deducted for each loan in a month, grouped by SSS, Pag-IBIG and company, with the loan numbers for the agency's collection list.
 
 These reports give the figures that go into each form. They aren't the BIR, SSS, PhilHealth or Pag-IBIG file formats themselves (see "Not yet").
 

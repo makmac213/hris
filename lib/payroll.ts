@@ -1,6 +1,7 @@
 // Philippine payroll rules for the prototype. Every rate below cites its legal source; see docs/payroll-rules.md.
 // Pay follows the employee's shift code: only time inside the schedule is paid, plus overtime that was filed and approved.
 
+import { loanItemsFor } from "./loans";
 import type { Compensation, Database, DeMinimisKind, DeductionCategory, Employee, EmployeePayrollSettings, Holiday, OvertimeRequest, PayItem, PayItemType, PayrollPeriod, PayrollSettings, ShiftCode, TimeRecord } from "./types";
 import { addDays } from "./format";
 import { isWeekend, localToIso, spanMinutes, zoned } from "./time";
@@ -709,7 +710,7 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
   // ---- Allowances, benefits and other additions ----
   const additions: PayLine[] = [];
   const allItems = effectiveItems(db, employee);
-  const applied = itemsFor(allItems, employee.id, period);
+  const applied: { item: PayItem; installment: number | null; note?: string }[] = [...itemsFor(allItems, employee.id, period), ...loanItemsFor(db, employee, period)];
   let taxableAdditions = 0, sssAdditions = 0, nonTaxable = 0, poolThis = 0;
   for (const { item } of applied.filter((a) => a.item.direction === "earning")) {
     const c = item.category;
@@ -844,7 +845,7 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
   let available = gross - sumL(contributions) - tax;
   const dedItems = applied.filter((a) => a.item.direction === "deduction")
     .sort((a, b) => DEDUCTION_PRIORITY.indexOf(a.item.category as DeductionCategory) - DEDUCTION_PRIORITY.indexOf(b.item.category as DeductionCategory));
-  for (const { item, installment } of dedItems) {
+  for (const { item, installment, note } of dedItems) {
     const cat = item.category as DeductionCategory;
     if (!NO_AUTH_NEEDED.includes(cat) && !item.authorization) {
       flags.push(`${item.label} not deducted: it needs the employee’s signed authorization on file (Art. 113, DO 195-18).`);
@@ -856,9 +857,9 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
       if (amt > cap) { deferred.push({ key: `def-${item.id}-cap`, label: item.label, detail: "Over the 20% of wages limit (Art. 114–115)", amount: amt - cap }); amt = cap; }
     }
     const take = Math.max(0, Math.min(amt, available));
-    const detail = [deductionNote(cat), installment && item.installments ? `installment ${installment} of ${item.installments}` : null].filter(Boolean).join(" · ");
+    const detail = [deductionNote(cat), installment && item.installments ? `installment ${installment} of ${item.installments}` : null, note ?? null].filter(Boolean).join(" · ");
     if (take > 0) otherDeductions.push({ key: `ded-${item.id}`, label: item.label, detail, amount: take });
-    if (amt - take > 0.004) deferred.push({ key: `def-${item.id}`, label: item.label, detail: "Pay this cutoff can’t cover it; carried to the next", amount: amt - take });
+    if (amt - take > 0.004) deferred.push({ key: `def-${item.id}`, label: item.label, detail: note ? "Pay this cutoff can’t cover it; it stays in the loan balance" : "Pay this cutoff can’t cover it; carried to the next", amount: amt - take });
     available -= take;
   }
   if (deferred.length) flags.push(`${peso(sumL(deferred))} of deductions couldn’t be taken this cutoff and carries over.`);

@@ -1,4 +1,6 @@
 import type {
+  Loan,
+  LoanPayment,
   Database,
   Department,
   Employee,
@@ -37,6 +39,7 @@ import { probationEndFor } from "./employment";
 import { STATUTORY_LEAVES } from "./leave";
 import { isWeekend, localToIso, phDefaultCodes, spanMinutes, zoned } from "./time";
 import { DEFAULT_APPROVAL_SETTINGS } from "./approvals";
+import { DEFAULT_LOAN_SETTINGS } from "./loans";
 import { issuePayslips } from "./payslips";
 import { seedAuditLog } from "./audit";
 import { assignmentId, DEFAULT_SCHEDULE_SETTINGS, leaveNotifications } from "./schedule";
@@ -525,13 +528,34 @@ const pay_items: PayItem[] = [
   item("pi-reimb-e08", "e08", "pt-reimb", 2350, { label: "Client visit expenses", start_date: P1 }),
   item("pi-bonus-e19", "e19", "pt-bonus", 25000, { start_date: P0 }),
   item("pi-rice-e25", "e25", "pt-rice", 1000, { label: "Rice subsidy (part-time rate)" }), // overrides the company default
-  item("pi-sssloan-e16", "e16", "pt-sssloan", 1100, { start_date: "2026-06-01", installments: 24 }),
-  item("pi-pagloan-e32", "e32", "pt-pagloan", 950, { label: "Pag-IBIG multi-purpose loan", schedule: "second_cutoff", start_date: "2025-12-16", installments: 24 }),
-  item("pi-loan-e13", "e13", "pt-loan", 2000, { label: "Company laptop loan", start_date: "2026-09-01", installments: 12, authorization: "Signed salary deduction authorization, Aug 28, 2026" }),
   item("pi-ins-e22", "e22", "pt-hmo", 900, { authorization: "HMO enrolment form with deduction consent" }),
   item("pi-coop-e19", "e19", "pt-coop", 500, { authorization: "Cooperative membership form, Mar 2, 2026" }),
-  item("pi-adv-e25", "e25", "pt-advance", 1500, { start_date: P1, installments: 2 }), // no authorization on file yet
-  item("pi-adv-e37", "e37", "pt-advance", 3000, { label: "Emergency cash advance", start_date: P1, installments: 2, authorization: "Signed authorization, Nov 14, 2026" }),
+];
+
+// ---- Loans (lib/loans.ts) -------------------------------------------------------------
+// Loans that started before Halden carry what was already repaid; payroll pays down the rest.
+
+const loan = (id: string, employee_id: string, kind: Loan["kind"], extra: Partial<Loan>): Loan => ({
+  id, organization_id: ORG_ID, employee_id, kind, reference_no: null, purpose: null, principal: 0, paid_before: 0, monthly_amortization: 0,
+  schedule: "split", first_deduction_on: P0, authorization: null, status: "active", stop_reason: null, requested_at: null, requested_installments: null,
+  decided_by: null, decided_at: null, decision_note: null, created_by: "e10", created_at: "2026-10-30T09:00:00+08:00", ...extra,
+});
+const loans: Loan[] = [
+  loan("ln-sss-e16", "e16", "sss_salary", { reference_no: "0426-1187-34", principal: 52800, paid_before: 11000, monthly_amortization: 2200, first_deduction_on: "2026-06-01" }),
+  loan("ln-pag-e32", "e32", "pagibig_multi_purpose", { reference_no: "MPL-2025-0098812", principal: 22800, paid_before: 10450, monthly_amortization: 950, schedule: "second_cutoff", first_deduction_on: "2025-12-16" }),
+  loan("ln-co-e13", "e13", "company_loan", { purpose: "Laptop", principal: 24000, paid_before: 8000, monthly_amortization: 4000, first_deduction_on: "2026-09-01", authorization: "Signed salary deduction authorization, Aug 28, 2026" }),
+  loan("ln-adv-e37", "e37", "cash_advance", {
+    purpose: "Hospital bill", principal: 6000, monthly_amortization: 6000, first_deduction_on: P1, authorization: "Signed authorization, Nov 14, 2026",
+    requested_at: at(addDays(P1, -3), "10:12"), requested_installments: 2, decided_by: "e10", decided_at: at(addDays(P1, -2), "14:30"), created_by: "e37", created_at: at(addDays(P1, -3), "10:12"),
+  }),
+  loan("ln-adv-e19", "e19", "cash_advance", { purpose: "Moving costs", principal: 4000, paid_before: 0, monthly_amortization: 4000, first_deduction_on: "2026-08-01", authorization: "Signed authorization, Jul 28, 2026", created_at: "2026-07-28T09:00:00+08:00" }),
+  loan("ln-req-e25", "e25", "cash_advance", {
+    purpose: "School enrollment", principal: 3000, monthly_amortization: 3000, first_deduction_on: TODAY_LOCAL, status: "requested",
+    requested_at: at(TODAY_LOCAL, "08:40"), requested_installments: 2, created_by: "e25", created_at: at(TODAY_LOCAL, "08:40"),
+  }),
+];
+const loan_payments: LoanPayment[] = [
+  { id: "lp-e19-1", loan_id: "ln-adv-e19", employee_id: "e19", paid_on: "2026-08-31", amount: 4000, method: "paid_directly", note: "Paid in full at the cashier, OR 004512", recorded_by: "e10", recorded_at: "2026-08-31T16:00:00+08:00" },
 ];
 
 // ---- Leave ------------------------------------------------------------------------
@@ -647,6 +671,9 @@ export const seed: Database = {
   schedule_settings,
   approval_settings: { ...DEFAULT_APPROVAL_SETTINGS },
   notifications: [] as AppNotification[],
+  loans,
+  loan_payments,
+  loan_settings: { ...DEFAULT_LOAN_SETTINGS },
   audit_log: [],
 };
 

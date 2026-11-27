@@ -7,6 +7,7 @@ import { peso } from "@/lib/payroll";
 import { payslipsOf } from "@/lib/payslips";
 import { Button, EmptyState } from "@/components/ui";
 import { Payslip } from "./Payslip";
+import { MyLoans } from "@/features/loans/MyLoans";
 
 const range = (start: string, end: string) => `${formatDate(start).replace(/, \d{4}$/, "")} – ${formatDate(end)}`;
 
@@ -75,6 +76,7 @@ export function MyPayView() {
           <Payslip slip={slip} showEmployer={false} />
         </section>
       </div>
+      <MyLoans />
     </div>
   );
 }

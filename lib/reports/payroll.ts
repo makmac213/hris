@@ -5,6 +5,7 @@ import { displayName, formatDate } from "../format";
 import { RULES, SOURCES, thirteenthMonthPay, type Payslip } from "../payroll";
 import { slipFor } from "../payslips";
 import { annualSummary } from "../yearend";
+import { LOAN_KINDS, loanSummary } from "../loans";
 import type { ReportDef, Viewer } from "./types";
 import { groupOf, orgScope, people, r2 } from "./common";
 
@@ -202,4 +203,82 @@ export const thirteenth: ReportDef = {
 };
 
 export const monthName = (ym: string) => new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${ym}-01T00:00:00Z`));
-export const PAYROLL_REPORTS = [register, contributions, withholding, alphalist, thirteenth];
+export const loanBalances: ReportDef = {
+  key: "loan-balances", title: "Loan balances", category: "payroll", access: payAccess,
+  description: "Every loan and advance still being paid as of a date: amount, repaid, balance, per-cutoff deduction and the expected last deduction.",
+  filters: ["as_of", "org"],
+  run(db, p, scope) {
+    const ids = new Set(people(db, p, scope).map((e) => e.id));
+    const byId = new Map(db.employees.map((e) => [e.id, e]));
+    const rows = (db.loans ?? []).filter((l) => ids.has(l.employee_id) && (l.status === "active" || l.status === "paused") && l.created_at.slice(0, 10) <= p.as_of)
+      .map((l) => loanSummary(db, l, p.as_of)).filter((s) => s.balance > 0)
+      .map((s) => ({
+        name: displayName(byId.get(s.loan.employee_id)!), kind: s.info.label, reference: s.loan.reference_no ?? "", status: s.status === "paused" ? "Paused" : "Active",
+        principal: s.loan.principal, repaid: s.repaid, balance: s.balance, per_cutoff: s.perCutoff, last: s.lastDeduction?.pay_date ?? null,
+      })).sort((a, b) => a.name.localeCompare(b.name) || a.kind.localeCompare(b.kind));
+    const tot = (k: "principal" | "repaid" | "balance") => r2(rows.reduce((n, r) => n + r[k], 0));
+    const byKind = new Map<string, number>();
+    for (const r of rows) byKind.set(r.kind, (byKind.get(r.kind) ?? 0) + r.balance);
+    return {
+      scope: `As of ${formatDate(p.as_of)}${orgScope(db, p)}`,
+      columns: [
+        { key: "name", label: "Name", kind: "text" }, { key: "kind", label: "Loan", kind: "text" }, { key: "reference", label: "Reference", kind: "text" },
+        { key: "status", label: "Status", kind: "text" }, { key: "principal", label: "Amount", kind: "money" }, { key: "repaid", label: "Repaid", kind: "money" },
+        { key: "balance", label: "Balance", kind: "money" }, { key: "per_cutoff", label: "Per cutoff", kind: "money" }, { key: "last", label: "Last deduction", kind: "date" },
+      ],
+      rows,
+      totals: { name: "Total", kind: "", reference: "", status: "", principal: tot("principal"), repaid: tot("repaid"), balance: tot("balance"), per_cutoff: null, last: null },
+      kpis: [
+        { label: "Outstanding", value: tot("balance"), kind: "money", note: `${rows.length} loan${rows.length === 1 ? "" : "s"}` },
+        { label: "Repaid so far", value: tot("repaid"), kind: "money" },
+      ],
+      charts: [{ kind: "bars", title: "Outstanding by kind", valueKind: "money", items: [...byKind].map(([label, value]) => ({ label, value: r2(value) })).sort((a, b) => b.value - a.value) }],
+      notes: ["Last deduction assumes every cutoff from now on can cover the full amount. Payments made outside payroll are included."],
+    };
+  },
+};
+
+export const loanRemittances: ReportDef = {
+  key: "loan-remittances", title: "Loan remittances", category: "payroll", access: payAccess,
+  description: "What payroll deducted for each loan in a month, by agency and loan number: the SSS and Pag-IBIG loan amortizations to remit, and company loans for the books.",
+  filters: ["month", "org"],
+  sources: [SOURCES.sss, SOURCES.pagibig],
+  run(db, p, scope, nowIso) {
+    const periods = periodsOfMonth(db, p.month);
+    const list = slipsFor(db, people(db, p, scope), periods, nowIso);
+    const loansById = new Map((db.loans ?? []).map((l) => [l.id, l]));
+    const rows: { agency: string; name: string; employee_number: string; kind: string; reference: string; amount: number }[] = [];
+    for (const { e, slips } of list) {
+      const taken = new Map<string, number>();
+      for (const s of slips) for (const l of s.otherDeductions) if (l.key.startsWith("ded-") && loansById.has(l.key.slice(4))) taken.set(l.key.slice(4), (taken.get(l.key.slice(4)) ?? 0) + l.amount);
+      for (const [id, amount] of taken) {
+        const loan = loansById.get(id)!;
+        const info = LOAN_KINDS[loan.kind];
+        rows.push({ agency: info.agency ?? "Company", name: displayName(e), employee_number: e.employee_number, kind: info.label, reference: loan.reference_no ?? "", amount: r2(amount) });
+      }
+    }
+    const order = ["SSS", "Pag-IBIG", "Company"];
+    rows.sort((a, b) => order.indexOf(a.agency) - order.indexOf(b.agency) || a.name.localeCompare(b.name));
+    const by = (agency: string) => r2(rows.filter((r) => r.agency === agency).reduce((n, r) => n + r.amount, 0));
+    return {
+      scope: `${monthName(p.month)}${orgScope(db, p)}`,
+      columns: [
+        { key: "agency", label: "Remit to", kind: "text" }, { key: "name", label: "Name", kind: "text" }, { key: "employee_number", label: "Employee no.", kind: "text" },
+        { key: "kind", label: "Loan", kind: "text" }, { key: "reference", label: "Loan number", kind: "text" }, { key: "amount", label: "Deducted", kind: "money" },
+      ],
+      rows,
+      totals: { agency: "Total", name: "", employee_number: "", kind: "", reference: "", amount: r2(rows.reduce((n, r) => n + r.amount, 0)) },
+      kpis: [
+        { label: "SSS loans to remit", value: by("SSS"), kind: "money" },
+        { label: "Pag-IBIG loans to remit", value: by("Pag-IBIG"), kind: "money" },
+        { label: "Company loans collected", value: by("Company"), kind: "money" },
+      ],
+      notes: [
+        ...openNote(periods),
+        "Remit SSS and Pag-IBIG loan amortizations with the month's contributions, against the agency's loan billing. A deduction lower than the billed amortization (a short cutoff) should be explained to the agency.",
+      ],
+    };
+  },
+};
+
+export const PAYROLL_REPORTS = [register, contributions, withholding, alphalist, thirteenth, loanBalances, loanRemittances];
