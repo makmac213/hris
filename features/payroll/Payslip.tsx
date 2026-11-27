@@ -19,7 +19,7 @@ export function Payslip({ slip, showEmployer }: { slip: PayslipData; showEmploye
         <span className="muted">{open ? "Projected net pay" : "Net pay"}</span>
         <strong className="num">{peso(slip.net)}</strong>
         <span className="muted">
-          {formatDate(slip.period.start_date)} – {formatDate(slip.period.end_date)} · paid {formatDate(slip.period.pay_date)}
+          {formatDate(slip.period.start_date)} – {formatDate(slip.period.end_date)} · {slip.period.status === "paid" ? "paid" : "pay day"} {formatDate(slip.period.pay_date)}
         </span>
       </div>
 

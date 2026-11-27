@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { computePayslip } from "@/lib/payroll";
+import { computePayslip, type Payslip } from "@/lib/payroll";
+import { issuePayslips, payslipId, payslipsOf, slipFor } from "@/lib/payslips";
 import { annualSummary, yearEndDeadlines } from "@/lib/yearend";
 import { type Ctx, isPrivileged, requirePrivileged, requireScope, selfId } from "../context";
 import { conflict, forbidden, notFound } from "../errors";
@@ -22,7 +23,7 @@ async function period(ctx: Ctx, id: string) {
 export async function register(ctx: Ctx, id: string) {
   requirePrivileged(ctx, "payroll:read");
   const { db, p } = await period(ctx, id);
-  const slips = db.employees.map((e) => computePayslip(db, e, p, ctx.now)).filter((s) => !!s);
+  const slips = db.employees.map((e) => slipFor(db, e, p, ctx.now)).filter((s) => !!s);
   const sum = (f: (s: (typeof slips)[number]) => number) => Math.round(slips.reduce((n, s) => n + f(s), 0) * 100) / 100;
   return { period: p, totals: { gross: sum((s) => s.gross), tax: sum((s) => s.tax), net: sum((s) => s.net) }, data: slips.map(serializeSlip) };
 }
@@ -39,24 +40,50 @@ export async function finalize(ctx: Ctx, id: string) {
   if (pending) throw conflict(`${pending} request${pending > 1 ? "s are" : " is"} still pending in this period.`);
   const below = db.employees.map((e) => computePayslip(db, e, p, ctx.now)).filter((s) => s?.belowMinimum);
   if (below.length) throw conflict(`${below.length} ${below.length > 1 ? "people are" : "person is"} paid below the minimum wage.`);
+  // Postgres: one transaction for the period and its payslips.
   const [row] = await ctx.repo.update("payroll_periods", "id", id, { status: "finalized", finalized_at: ctx.now, finalized_by: ctx.principal.employee.id });
-  return row;
+  const issued = await ctx.repo.upsert("payslips", issuePayslips(db, p, ctx.now, ctx.orgId));
+  return { ...row, payslips_issued: issued.length };
 }
 
-export const ListPayslips = listQuery.extend({ employee_id: z.string().optional(), period_id: z.string().optional() });
+export const ListPayslips = listQuery.extend({
+  employee_id: z.string().optional(),
+  period_id: z.string().optional(),
+  include_estimate: z.enum(["true", "false"]).default("false"),
+});
+const payslipOut = (s: Payslip) => ({ id: payslipId(s.period.id, s.employee.id), status: s.period.status, estimate: s.period.status === "open", ...serializeSlip(s) });
+
+/** Who may read this person's pay: themselves, admin and HR. Managers don't see their team's pay. */
+function payOwner(ctx: Ctx, employeeId: string | undefined) {
+  const who = employeeId ?? selfId(ctx);
+  if (!who) throw forbidden("Pass employee_id.");
+  if (who !== selfId(ctx) && !isPrivileged(ctx)) throw forbidden();
+  return who;
+}
+
 export async function payslips(ctx: Ctx, query: unknown) {
   requireScope(ctx, "payroll:read");
   const q = parse(ListPayslips, query);
+  const who = payOwner(ctx, q.employee_id);
   const db = await ctx.repo.snapshot(ctx.orgId);
-  const who = q.employee_id ?? selfId(ctx);
-  if (!who) throw forbidden("Pass employee_id.");
-  // Pay is private: the person, admin and HR. Managers don't see their team's pay.
-  if (who !== selfId(ctx) && !isPrivileged(ctx)) throw forbidden();
   const emp = db.employees.find((e) => e.id === who);
   if (!emp) throw notFound("Employee");
-  const periods = db.payroll_periods.filter((p) => !q.period_id || p.id === q.period_id);
-  const slips = periods.map((p) => computePayslip(db, emp, p, ctx.now)).filter((s) => !!s).map((s) => ({ id: `${s.period.id}:${emp.id}`, status: s.period.status, ...serializeSlip(s) }));
-  return paginate(slips, q);
+  const { issued, estimate } = payslipsOf(db, emp, ctx.now);
+  const all = q.include_estimate === "true" && estimate ? [estimate, ...issued] : issued;
+  return paginate(all.filter((s) => !q.period_id || s.period.id === q.period_id).map(payslipOut), q);
+}
+
+export async function payslip(ctx: Ctx, id: string) {
+  requireScope(ctx, "payroll:read");
+  const [periodId, employeeId] = id.split(":");
+  if (!periodId || !employeeId) throw notFound("Payslip");
+  payOwner(ctx, employeeId);
+  const db = await ctx.repo.snapshot(ctx.orgId);
+  const emp = db.employees.find((e) => e.id === employeeId);
+  const p = db.payroll_periods.find((x) => x.id === periodId);
+  const s = emp && p ? slipFor(db, emp, p, ctx.now) : null;
+  if (!s) throw notFound("Payslip");
+  return { ...payslipOut(s), days: s.days.filter((d) => d.scheduledMin || d.otMin || d.holiday) };
 }
 
 export async function yearEnd(ctx: Ctx, year: string) {

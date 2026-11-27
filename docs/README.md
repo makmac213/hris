@@ -16,6 +16,7 @@ All planning and documentation for the project lives here. Start with the roadma
 | [Final pay](final-pay.md) | What's in final pay, separation and retirement pay, tax, notice and timing |
 | [Year-end tax](year-end-tax.md) | Annualization, BIR 2316, 1601-C, 1604-C and substituted filing |
 | [Time in and time out edge cases](time-punches.md) | Double taps, repeated punches, breaks, forgotten time outs, overnight shifts, offline devices, and how payroll counts each |
+| [Payslips](payslips.md) | What employees see under My pay, printing, and why issued payslips never change |
 | [Who approves requests](approvals.md) | Direct supervisor plus approver roles, for leave, overtime and corrections |
 | [Organization and scheduling](scheduling.md) | Departments, branches, clients; the operations schedule, leave gaps, cover and notifications |
 
