@@ -8,7 +8,7 @@ import { displayName, employmentTypeLabel, formatBytes, formatDate, legalName, s
 import type { Employee, EmploymentStatus } from "@/lib/types";
 import { PayTab } from "./PayTab";
 import { EmploymentTerms, LeaveTab } from "./EmploymentTab";
-import { Avatar, Button, Dialog, EmptyState, Field, Icon, PersonCell, Progress, StatusBadge } from "@/components/ui";
+import { Avatar, Button, Dialog, EmptyState, Field, Icon, PersonCell, Progress, StatusBadge, Blank } from "@/components/ui";
 
 type Tab = "overview" | "employment" | "leave" | "documents" | "pay";
 
@@ -115,7 +115,7 @@ export function ProfileView({ id }: { id: string }) {
               <h2>Job</h2>
               <dl className="dl">
                 <div><dt>Employee ID</dt><dd className="num">{e.employee_number}</dd></div>
-                <div><dt>Department</dt><dd>{dept?.name ?? "—"}</dd></div>
+                <div><dt>Department</dt><dd>{dept?.name ?? <Blank />}</dd></div>
                 <div><dt>Employment type</dt><dd>{employmentTypeLabel[e.employment_type]}</dd></div>
                 <div><dt>Start date</dt><dd>{formatDate(e.start_date)} <span className="muted">· {tenure(e.start_date, today())}</span></dd></div>
                 <div>
@@ -126,7 +126,7 @@ export function ProfileView({ id }: { id: string }) {
                   </dd>
                 </div>
                 {(e.client_id || db.clients.length > 0) && <div><dt>Client</dt><dd>{db.clients.find((c) => c.id === e.client_id)?.name ?? <span className="muted">Not on a client</span>}</dd></div>}
-                <div><dt>Branch</dt><dd>{loc?.name ?? "—"}{localTime && <span className="muted" suppressHydrationWarning> · {localTime} local time</span>}</dd></div>
+                <div><dt>Branch</dt><dd>{loc?.name ?? <Blank />}{localTime && <span className="muted" suppressHydrationWarning> · {localTime} local time</span>}</dd></div>
                 {e.end_date && <div><dt>Last day</dt><dd>{formatDate(e.end_date)}</dd></div>}
               </dl>
             </section>

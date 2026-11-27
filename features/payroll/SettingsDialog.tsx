@@ -5,7 +5,7 @@ import { updatePayrollSettings, useDb } from "@/lib/store";
 import { REGIONAL_WAGES } from "@/lib/regions";
 import { peso } from "@/lib/payroll";
 import type { PayrollSettings } from "@/lib/types";
-import { Button, Dialog, Field } from "@/components/ui";
+import { Button, Dialog, Field, Blank } from "@/components/ui";
 
 export function Choice<T extends string | number>({ legend, value, options, onChange, hint }: {
   legend: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; hint?: ReactNode;
@@ -111,7 +111,7 @@ export function PayrollSettingsDialog({ onClose }: { onClose: () => void }) {
                       <td>{w.name}{w.note && <span className="cell-sub">{w.note}</span>}</td>
                       <td className="num">{peso(w.daily)}</td>
                       <td>{w.wageOrder} · from {w.effective}</td>
-                      <td>{locs.join(", ") || "—"}</td>
+                      <td>{locs.join(", ") || <Blank />}</td>
                     </tr>
                   );
                 })}

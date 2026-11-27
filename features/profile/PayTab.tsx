@@ -7,7 +7,7 @@ import Link from "next/link";
 import { deductionLabel, earningLabel, scheduleLabel, treatmentHint, appliesToLabel } from "@/features/payroll/labels";
 import { formatDate } from "@/lib/format";
 import type { DeductionCategory, EarningCategory, Employee, PayItem, PayItemSchedule, PayItemType } from "@/lib/types";
-import { Button, Dialog, EmptyState, Field } from "@/components/ui";
+import { Button, Dialog, EmptyState, Field, Blank } from "@/components/ui";
 import { Choice, Toggle } from "@/features/payroll/SettingsDialog";
 
 
@@ -70,7 +70,7 @@ export function PayTab({ employee }: { employee: Employee }) {
                       <span className="muted">{appliesToLabel[t.applies_to]} · {scheduleLabel[t.default_schedule].toLowerCase()}{own ? (own.amount === 0 ? " · excluded for this person" : " · amount changed for this person") : ""}</span>
                     </span>
                     <span className="pay-item-side">
-                      <span className="num pay-item-amt">{own?.amount === 0 ? "—" : `+${peso(own?.amount ?? t.default_amount ?? 0)}`}</span>
+                      <span className="num pay-item-amt">{own?.amount === 0 ? <Blank /> : `+${peso(own?.amount ?? t.default_amount ?? 0)}`}</span>
                       {own
                         ? <Button size="sm" variant="ghost" onClick={() => endPayItem(own.id, "1900-01-01")}>Use company default</Button>
                         : <>

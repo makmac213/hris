@@ -5,7 +5,7 @@ import { cancelLeave, fileLeave, isPeriodLocked, today, useCurrentUser, useDb } 
 import { displayName, formatDate } from "@/lib/format";
 import { SIL_ID, leaveBalance, leaveTypesFor, requestDays, validateLeave, type LeaveBalance } from "@/lib/leave";
 import type { Database, Employee, LeaveType } from "@/lib/types";
-import { Button, Dialog, EmptyState, Field, Icon } from "@/components/ui";
+import { Button, Dialog, EmptyState, Field, Icon, Blank } from "@/components/ui";
 import { RequestStatusBadge } from "@/features/requests/MyRequests";
 
 const days = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
@@ -49,9 +49,9 @@ export function BalanceTable({ balances, caption }: { balances: LeaveBalance[]; 
                   </span>
                 </td>
                 <td className="num r col-md">{b.granted}{b.adjusted ? <span className="muted small"> {b.adjusted > 0 ? "+" : "−"}{Math.abs(b.adjusted)}</span> : null}</td>
-                <td className="num r col-md">{b.carried || "—"}</td>
-                <td className="num r">{b.used || "—"}</td>
-                <td className="num r col-md">{b.pending || "—"}</td>
+                <td className="num r col-md">{b.carried || <Blank />}</td>
+                <td className="num r">{b.used || <Blank />}</td>
+                <td className="num r col-md">{b.pending || <Blank />}</td>
                 <td className="num r"><strong>{b.available}</strong></td>
               </tr>
             );

@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { indexById, today, useCurrentUser, useDb } from "@/lib/store";
 import { displayName, formatDate, statusLabel } from "@/lib/format";
 import type { Employee, EmploymentStatus } from "@/lib/types";
-import { Button, EmptyState, FilterSelect, Icon, PersonCell, SearchInput, StatusBadge } from "@/components/ui";
+import { Button, EmptyState, FilterSelect, Icon, PersonCell, SearchInput, StatusBadge, Blank } from "@/components/ui";
 import { AddEmployeeDialog } from "./AddEmployeeDialog";
 
 type SortKey = "name" | "department" | "location" | "manager" | "start" | "status";
@@ -133,8 +133,8 @@ export function DirectoryView() {
                         <PersonCell person={e} sub={e.job_title} />
                       </Link>
                     </td>
-                    <td className="col-md">{deps.get(e.department_id ?? "")?.name ?? "—"}</td>
-                    <td className="col-lg">{locs.get(e.location_id ?? "")?.name ?? "—"}</td>
+                    <td className="col-md">{deps.get(e.department_id ?? "")?.name ?? <Blank />}</td>
+                    <td className="col-lg">{locs.get(e.location_id ?? "")?.name ?? <Blank />}</td>
                     <td className="col-lg">{m ? displayName(m) : <span className="muted">No manager</span>}</td>
                     <td className="col-md num">{formatDate(e.start_date)}</td>
                     <td>{e.status === "active" ? <span className="muted">Active</span> : <StatusBadge status={e.status} />}</td>

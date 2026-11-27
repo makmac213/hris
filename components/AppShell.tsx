@@ -143,6 +143,8 @@ function Notifications() {
   const router = useRouter();
   const { employee: me } = useCurrentUser();
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  useEffect(() => setOpen(false), [pathname]);
   const mine = db.notifications.filter((n) => n.recipient_id === me.id).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const unread = mine.filter((n) => !n.read_at).length;
   useEffect(() => {

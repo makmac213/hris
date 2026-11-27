@@ -6,7 +6,7 @@ import { archiveClient, assignPeople, deleteOrgUnit, saveBranch, saveClient, sav
 import { displayName } from "@/lib/format";
 import { REGIONAL_WAGES } from "@/lib/regions";
 import type { Client, Department, Employee, Location, PhRegion } from "@/lib/types";
-import { Button, Dialog, EmptyState, Field, Icon, PersonCell, SearchInput } from "@/components/ui";
+import { Button, Dialog, EmptyState, Field, Icon, PersonCell, SearchInput, Blank, RowMenu } from "@/components/ui";
 
 type Tab = "departments" | "branches" | "clients";
 type Field3 = "department_id" | "location_id" | "client_id";
@@ -84,7 +84,7 @@ export function OrganizationView() {
                     <td><strong>{d.name}</strong></td>
                     <td className="col-md">{head ? displayName(head) : <span className="muted">No head</span>}</td>
                     <td className="num">{count("department_id", d.id)}</td>
-                    <td className="actions-cell"><RowActions onEdit={() => setEditing({ tab, row: d })} onAssign={() => setAssigning({ tab, unit: d })} onDelete={() => remove("department", d)} deleteLabel="Delete" /></td>
+                    <td className="actions-cell"><RowActions name={d.name} onEdit={() => setEditing({ tab, row: d })} onAssign={() => setAssigning({ tab, unit: d })} onDelete={() => remove("department", d)} deleteLabel="Delete" /></td>
                   </tr>
                 );
               })}
@@ -104,7 +104,7 @@ export function OrganizationView() {
                   <td className="col-md">{l.is_remote ? <span className="muted">Remote</span> : [l.city, l.country_code].filter(Boolean).join(", ")}</td>
                   <td className="col-lg muted">{l.timezone}</td>
                   <td className="num">{count("location_id", l.id)}</td>
-                  <td className="actions-cell"><RowActions onEdit={() => setEditing({ tab, row: l })} onAssign={() => setAssigning({ tab, unit: l })} onDelete={() => remove("branch", l)} deleteLabel="Delete" /></td>
+                  <td className="actions-cell"><RowActions name={l.name} onEdit={() => setEditing({ tab, row: l })} onAssign={() => setAssigning({ tab, unit: l })} onDelete={() => remove("branch", l)} deleteLabel="Delete" /></td>
                 </tr>
               ))}
             </tbody>
@@ -124,12 +124,12 @@ export function OrganizationView() {
                   {clients.map((c) => (
                     <tr key={c.id} className={c.archived_at ? "row-archived" : ""}>
                       <td><strong>{c.name}</strong> <span className="code">{c.code}</span>{c.archived_at && <span className="st-tag">Archived</span>}</td>
-                      <td className="col-md">{c.industry ?? <span className="muted">—</span>}</td>
+                      <td className="col-md">{c.industry ?? <Blank />}</td>
                       <td className="num">{count("client_id", c.id)}</td>
                       <td className="actions-cell">
                         {c.archived_at
                           ? <Button size="sm" variant="ghost" onClick={() => { archiveClient(c.id, false); setNote({ text: `${c.name} restored.` }); }}>Restore</Button>
-                          : <RowActions onEdit={() => setEditing({ tab, row: c })} onAssign={() => setAssigning({ tab, unit: c })} onDelete={() => { const n = count("client_id", c.id); archiveClient(c.id, true); setNote({ text: `${c.name} archived${n ? `. ${n} ${n === 1 ? "person was" : "people were"} taken off the account` : ""}.` }); }} deleteLabel="Archive" />}
+                          : <RowActions name={c.name} onEdit={() => setEditing({ tab, row: c })} onAssign={() => setAssigning({ tab, unit: c })} onDelete={() => { const n = count("client_id", c.id); archiveClient(c.id, true); setNote({ text: `${c.name} archived${n ? `. ${n} ${n === 1 ? "person was" : "people were"} taken off the account` : ""}.` }); }} deleteLabel="Archive" />}
                       </td>
                     </tr>
                   ))}
@@ -153,12 +153,11 @@ export function OrganizationView() {
   );
 }
 
-function RowActions({ onEdit, onAssign, onDelete, deleteLabel }: { onEdit: () => void; onAssign: () => void; onDelete: () => void; deleteLabel: string }) {
+function RowActions({ name, onEdit, onAssign, onDelete, deleteLabel }: { name: string; onEdit: () => void; onAssign: () => void; onDelete: () => void; deleteLabel: string }) {
   return (
     <span className="row-actions">
       <Button size="sm" variant="ghost" onClick={onAssign}>Assign people</Button>
-      <Button size="sm" variant="ghost" onClick={onEdit}>Edit</Button>
-      <Button size="sm" variant="ghost" onClick={onDelete}>{deleteLabel}</Button>
+      <RowMenu label={`More for ${name}`} items={[{ label: "Edit", run: onEdit }, { label: deleteLabel, run: onDelete }]} />
     </span>
   );
 }

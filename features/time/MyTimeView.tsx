@@ -6,7 +6,7 @@ import { cellFor, datesFrom, scheduleFor } from "@/lib/schedule";
 import { formatDate } from "@/lib/format";
 import { formatDuration, formatInstant, shiftHours, shiftKindLabel, summarizeDay } from "@/lib/time";
 import type { TimeRecord } from "@/lib/types";
-import { Button, EmptyState, Icon } from "@/components/ui";
+import { Button, EmptyState, Icon, Blank } from "@/components/ui";
 import { DayStatusBadge, ProofPhoto, RecordWhere, paidMinutes, useNow } from "./shared";
 import { RecordTimeDialog } from "./RecordTimeDialog";
 import { CorrectionDialog, OvertimeDialog } from "@/features/requests/RequestDialogs";
@@ -153,9 +153,9 @@ export function MyTimeView() {
                 {history.map(({ date, s }) => (
                   <tr key={date}>
                     <td className="num">{formatDate(date)}</td>
-                    <td className="num">{s.clockIn ? formatInstant(s.clockIn.recorded_at, shift.timezone) : "—"}</td>
-                    <td className="num">{s.clockOut ? formatInstant(s.clockOut.recorded_at, shift.timezone) : "—"}</td>
-                    <td className="num col-md">{s.workedMinutes ? formatDuration(s.workedMinutes) : "—"}</td>
+                    <td className="num">{s.clockIn ? formatInstant(s.clockIn.recorded_at, shift.timezone) : <Blank />}</td>
+                    <td className="num">{s.clockOut ? formatInstant(s.clockOut.recorded_at, shift.timezone) : <Blank />}</td>
+                    <td className="num col-md">{s.workedMinutes ? formatDuration(s.workedMinutes) : <Blank />}</td>
                     <td><DayStatusBadge s={s} /></td>
                     <td className="actions-cell">
                       <Button size="sm" variant="ghost" onClick={() => setFiling({ type: "fix", date, kind: !s.clockOut ? "missing_out" : s.lateMinutes ? "wrong_in" : "wrong_out" })}>Request a fix</Button>

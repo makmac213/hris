@@ -6,7 +6,7 @@ import { finalizePayroll, useCurrentUser, useDb } from "@/lib/store";
 import { displayName, formatDate } from "@/lib/format";
 import { zoned } from "@/lib/time";
 import { RULES, SOURCES, computePayslip, peso, thirteenthMonthEstimate, type Payslip as PayslipData } from "@/lib/payroll";
-import { Button, Dialog, EmptyState, Icon, PersonCell } from "@/components/ui";
+import { Button, Dialog, EmptyState, Icon, PersonCell, Blank } from "@/components/ui";
 import { Payslip } from "./Payslip";
 import { employmentAlerts } from "@/lib/employment";
 import { PayrollSettingsDialog } from "./SettingsDialog";
@@ -163,12 +163,12 @@ export function PayrollView() {
                   </button>
                 </td>
                 <td className="num r">{peso(basicOf(s))}</td>
-                <td className={`num r col-md ${adj(s) + otOf(s) < 0 ? "neg" : ""}`}>{adj(s) + otOf(s) ? (adj(s) + otOf(s) < 0 ? peso(adj(s) + otOf(s)) : `+${peso(adj(s) + otOf(s))}`) : "—"}</td>
-                <td className="num r col-lg">{addOf(s) ? peso(addOf(s)) : "—"}</td>
+                <td className={`num r col-md ${adj(s) + otOf(s) < 0 ? "neg" : ""}`}>{adj(s) + otOf(s) ? (adj(s) + otOf(s) < 0 ? peso(adj(s) + otOf(s)) : `+${peso(adj(s) + otOf(s))}`) : <Blank />}</td>
+                <td className="num r col-lg">{addOf(s) ? peso(addOf(s)) : <Blank />}</td>
                 <td className="num r">{peso(s.gross)}</td>
                 <td className="num r col-lg">{peso(s.contributions.reduce((n, l) => n + l.amount, 0))}</td>
                 <td className="num r col-lg">{peso(s.tax)}</td>
-                <td className="num r col-lg">{otherOf(s) ? peso(otherOf(s)) : "—"}</td>
+                <td className="num r col-lg">{otherOf(s) ? peso(otherOf(s)) : <Blank />}</td>
                 <td className="num r strong">{peso(s.net)}</td>
               </tr>
             ))}

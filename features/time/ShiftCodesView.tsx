@@ -8,7 +8,7 @@ import type { ShiftCode, ShiftKind } from "@/lib/types";
 import {
   CSV_TEMPLATE, DEFAULT_SPAN, ORG_TZ, formatDuration, fromMinutes, parseShiftCsv, shiftHours, shiftKindLabel, spanMinutes, toMinutes, type ParsedRow,
 } from "@/lib/time";
-import { Button, Dialog, EmptyState, Field, Icon, PersonCell, SearchInput } from "@/components/ui";
+import { Button, Dialog, EmptyState, Field, Icon, PersonCell, SearchInput, Blank, RowMenu } from "@/components/ui";
 import { paidMinutes, sourceLabel } from "./shared";
 
 export function ShiftCodesView() {
@@ -136,25 +136,6 @@ export function ShiftCodesView() {
   );
 }
 
-function RowMenu({ label, items }: { label: string; items: { label: string; run: () => void }[] }) {
-  const [open, setOpen] = useState(false);
-  if (!items.length) return <span className="menu-spacer" aria-hidden="true" />;
-  return (
-    <span className="row-menu" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false); }}>
-      <button type="button" className="icon-btn" aria-label={label} aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen(!open)}>
-        <Icon name="more" size={18} />
-      </button>
-      {open && (
-        <ul className="menu row-menu-list" role="menu" onKeyDown={(e) => e.key === "Escape" && setOpen(false)}>
-          {items.map((it) => (
-            <li key={it.label}><button type="button" role="menuitem" onClick={() => { setOpen(false); it.run(); }}>{it.label}</button></li>
-          ))}
-        </ul>
-      )}
-    </span>
-  );
-}
-
 // ---- Upload ------------------------------------------------------------------
 
 function UploadDialog({ onClose, onDone }: { onClose: () => void; onDone: (n: number) => void }) {
@@ -222,8 +203,8 @@ function UploadDialog({ onClose, onDone }: { onClose: () => void; onDone: (n: nu
                   {rows.map((r) => (
                     <tr key={r.line}>
                       <td className="num muted">{r.line}</td>
-                      <td>{r.value ? <span className="code">{r.value.code}</span> : <span className="muted">—</span>}</td>
-                      <td className="num">{r.value ? `${shiftHours(r.value as ShiftCode)} · ${shiftKindLabel[r.value.kind]}` : "—"}</td>
+                      <td>{r.value ? <span className="code">{r.value.code}</span> : <Blank />}</td>
+                      <td className="num">{r.value ? `${shiftHours(r.value as ShiftCode)} · ${shiftKindLabel[r.value.kind]}` : <Blank />}</td>
                       <td>{r.errors.length ? <span className="text-danger">{r.errors.join(". ")}</span> : <span className="ok-text"><Icon name="check" size={16} /> Ready</span>}</td>
                     </tr>
                   ))}

@@ -7,7 +7,7 @@ import { displayName, formatDate } from "@/lib/format";
 import { formatDuration, formatInstant, summarizeDay, zoned, type DaySummary } from "@/lib/time";
 import { leaveOn, scheduleFor } from "@/lib/schedule";
 import type { Employee, ShiftCode } from "@/lib/types";
-import { Dialog, EmptyState, Button, PersonCell } from "@/components/ui";
+import { Dialog, EmptyState, Button, PersonCell, Blank } from "@/components/ui";
 import { DayStatusBadge, ProofPhoto, RecordWhere, ShiftSummary, useNow } from "./shared";
 
 type Filter = "all" | "late" | "missing" | "no_out";
@@ -119,9 +119,9 @@ export function AttendanceView() {
                         : <PersonCell person={r.e} sub={r.e.job_title} />}
                     </td>
                     <td className="col-lg"><ShiftSummary shift={r.shift} /></td>
-                    <td className="num">{r.s.clockIn ? formatInstant(r.s.clockIn.recorded_at, tz) : "—"}</td>
-                    <td className="num col-md">{r.s.clockOut ? formatInstant(r.s.clockOut.recorded_at, tz) : "—"}</td>
-                    <td className="num col-lg">{r.s.workedMinutes ? formatDuration(r.s.workedMinutes) : "—"}</td>
+                    <td className="num">{r.s.clockIn ? formatInstant(r.s.clockIn.recorded_at, tz) : <Blank />}</td>
+                    <td className="num col-md">{r.s.clockOut ? formatInstant(r.s.clockOut.recorded_at, tz) : <Blank />}</td>
+                    <td className="num col-lg">{r.s.workedMinutes ? formatDuration(r.s.workedMinutes) : <Blank />}</td>
                     <td><DayStatusBadge s={r.s} /></td>
                     <td className="col-md">
                       <span className="proof-thumbs">

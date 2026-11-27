@@ -5,7 +5,7 @@ import { useState } from "react";
 import { savePayItemType, useCurrentUser, useDb } from "@/lib/store";
 import { RULES, peso, typeReaches } from "@/lib/payroll";
 import type { DeMinimisKind, DeductionCategory, EarningCategory, PayItemSchedule, PayItemType, PayTypeAppliesTo } from "@/lib/types";
-import { Button, Dialog, EmptyState, Field, Icon } from "@/components/ui";
+import { Button, Dialog, EmptyState, Field, Icon, Blank } from "@/components/ui";
 import { Choice, Toggle } from "./SettingsDialog";
 import { appliesToLabel, deductionLabel, earningLabel, scheduleLabel, treatmentHint } from "./labels";
 
@@ -57,7 +57,7 @@ export function PayTypesView() {
                   </span>
                 </td>
                 <td className="col-lg">{direction === "deduction" ? "Person by person, with consent" : appliesToLabel[t.applies_to]}</td>
-                <td className="num r">{t.default_amount ? <>{peso(t.default_amount)}<span className="muted small"> · {scheduleLabel[t.default_schedule].toLowerCase()}</span></> : "—"}</td>
+                <td className="num r">{t.default_amount ? <>{peso(t.default_amount)}<span className="muted small"> · {scheduleLabel[t.default_schedule].toLowerCase()}</span></> : <Blank />}</td>
                 <td className="num r col-md">{reach(t)}</td>
                 <td className="r"><Button size="sm" variant="ghost" onClick={() => setEditing(t)}>Edit</Button></td>
               </tr>
