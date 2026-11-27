@@ -1,11 +1,12 @@
 "use client";
 
+import { slipFor } from "@/lib/payslips";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { finalizePayroll, useCurrentUser, useDb } from "@/lib/store";
 import { displayName, formatDate } from "@/lib/format";
 import { zoned } from "@/lib/time";
-import { RULES, SOURCES, computePayslip, peso, thirteenthMonthEstimate, type Payslip as PayslipData } from "@/lib/payroll";
+import { RULES, SOURCES, peso, thirteenthMonthEstimate, type Payslip as PayslipData } from "@/lib/payroll";
 import { Button, Dialog, EmptyState, Icon, PersonCell, Blank } from "@/components/ui";
 import { Payslip } from "./Payslip";
 import { employmentAlerts } from "@/lib/employment";
@@ -25,7 +26,7 @@ export function PayrollView() {
   const period = periods.find((p) => p.id === periodId)!;
 
   const slips = useMemo(
-    () => db.employees.map((e) => computePayslip(db, e, period, nowIso)).filter((s): s is PayslipData => !!s).sort((a, b) => displayName(a.employee).localeCompare(displayName(b.employee))),
+    () => db.employees.map((e) => slipFor(db, e, period, nowIso)).filter((s): s is PayslipData => !!s).sort((a, b) => displayName(a.employee).localeCompare(displayName(b.employee))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [db, period],
   );

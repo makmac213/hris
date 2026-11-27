@@ -36,6 +36,7 @@ import { probationEndFor } from "./employment";
 import { STATUTORY_LEAVES } from "./leave";
 import { isWeekend, localToIso, phDefaultCodes, spanMinutes, zoned } from "./time";
 import { DEFAULT_APPROVAL_SETTINGS } from "./approvals";
+import { issuePayslips } from "./payslips";
 import { assignmentId, DEFAULT_SCHEDULE_SETTINGS, leaveNotifications } from "./schedule";
 
 // Sample company for the prototype. All people are fictional.
@@ -611,6 +612,7 @@ export const seed: Database = {
   overtime_requests,
   correction_requests,
   payroll_periods,
+  payslips: [],
   payroll_settings,
   employee_payroll_settings,
   pay_items,
@@ -636,4 +638,10 @@ export const seed: Database = {
     ...leaveNotifications(seed, lv13, "filed", TODAY_LOCAL, lv13.filed_at, id, null),
     ...leaveNotifications(seed, lv10, "approved", TODAY_LOCAL, lv10.decided_at!, id, lv10.decided_by),
   ];
+}
+
+// The previous period was finalized at its cutoff, which saved everyone's payslip.
+{
+  const prev = payroll_periods.find((p) => p.status !== "open")!;
+  seed.payslips = issuePayslips(seed, prev, SEED_NOW, ORG_ID).map((x) => ({ ...x, issued_at: prev.finalized_at! }));
 }

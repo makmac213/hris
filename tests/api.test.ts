@@ -326,3 +326,24 @@ test("approvers: the direct supervisor, plus the roles the organization turns on
   assert.equal(ok.status, 200);
   assert.equal(ok.body.decided_by, "e40");
 });
+
+test("payslips: employees get their issued payslips; the open period only on request, as an estimate", async () => {
+  const mine = await call("GET", "/payslips", { as: "e19" });
+  assert.equal(mine.status, 200);
+  assert.ok(mine.body.data.length >= 1);
+  assert.ok(mine.body.data.every((s: { employee_id: string; estimate: boolean }) => s.employee_id === "e19" && !s.estimate), "issued only, own only");
+
+  const withEstimate = await call("GET", "/payslips?include_estimate=true", { as: "e19" });
+  assert.equal(withEstimate.body.data.filter((s: { estimate: boolean }) => s.estimate).length, 1);
+
+  const id = mine.body.data[0].id;
+  const one = await call("GET", `/payslips/${encodeURIComponent(id)}`, { as: "e19" });
+  assert.equal(one.status, 200);
+  assert.equal(one.body.net, mine.body.data[0].net);
+  assert.ok(Array.isArray(one.body.days));
+
+  const theirs = id.replace(":e19", ":e16");
+  assert.equal((await call("GET", `/payslips/${encodeURIComponent(theirs)}`, { as: "e19" })).status, 403, "not someone else's");
+  assert.equal((await call("GET", `/payslips/${encodeURIComponent(theirs)}`, { as: "e08" })).status, 403, "not even their manager");
+  assert.equal((await call("GET", `/payslips/${encodeURIComponent(theirs)}`, { as: "e10" })).status, 200, "HR can");
+});
