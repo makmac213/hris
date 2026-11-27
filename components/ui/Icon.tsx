@@ -7,6 +7,7 @@ const paths = {
   search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14M20 20l-4-4",
   plus: "M12 5v14M5 12h14",
   minus: "M5 12h14",
+  wallet: "M4 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4zM4 7V6a2 2 0 0 1 2-2h10v3M16 13.5h.01",
   more: "M6 12h.01M12 12h.01M18 12h.01",
   upload: "M12 20V9M7 14l5-5 5 5M5 4h14",
   camera: "M4 8h3l2-3h6l2 3h3v11H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7",

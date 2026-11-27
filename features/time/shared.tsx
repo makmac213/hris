@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Employee, ShiftCode, ShiftSource } from "@/lib/types";
+import type { Employee, ShiftCode, ShiftSource, TimeRecord } from "@/lib/types";
+import { Icon } from "@/components/ui";
 import { dayStatusLabel, formatDuration, shiftHours, spanMinutes, type DaySummary } from "@/lib/time";
 
 /** Live "now" that ticks every 15 seconds (or every second when `seconds` is set). */
@@ -15,7 +16,14 @@ export function useNow(seconds = false): number {
 }
 
 /** Time-record photo. Mock records carry `mock:<id>` and render a neutral placeholder portrait. */
-export function ProofPhoto({ path, size = 40, alt }: { path: string; size?: number; alt: string }) {
+export function ProofPhoto({ path, size = 40, alt }: { path: string | null; size?: number; alt: string }) {
+  if (!path) {
+    return (
+      <span className="proof-photo proof-corrected" style={{ width: size, height: size }} role="img" aria-label="Corrected by an approved request, no photo">
+        <Icon name="pencil" size={Math.max(14, Math.round(size / 3))} />
+      </span>
+    );
+  }
   if (path.startsWith("data:")) {
     return <img src={path} alt={alt} width={size} height={size} className="proof-photo" style={{ width: size, height: size }} />;
   }
@@ -69,3 +77,11 @@ export function ShiftSummary({ shift }: { shift: ShiftCode | undefined }) {
 export const paidMinutes = (s: ShiftCode) => spanMinutes(s) - s.break_minutes;
 
 export const firstName = (e: Employee) => e.preferred_name ?? e.first_name;
+
+/** Where a record was made: GPS link for device records, or a note for approved corrections. */
+export function RecordWhere({ r, className = "link num" }: { r: TimeRecord; className?: string }) {
+  if (r.source === "correction" || r.latitude === null || r.longitude === null) {
+    return <span className="muted">Corrected · approved request</span>;
+  }
+  return <a className={className} href={mapsUrl(r.latitude, r.longitude)} target="_blank" rel="noreferrer">{formatCoords(r.latitude, r.longitude)}</a>;
+}

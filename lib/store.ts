@@ -5,7 +5,7 @@
 // (and React Query / server actions) without touching the views.
 
 import { useSyncExternalStore } from "react";
-import type { AppRole, Database, Employee, OnboardingCase, OnboardingTask, ShiftCode, TimeRecord } from "./types";
+import type { AppRole, CorrectionKind, CorrectionRequest, Database, Employee, OnboardingCase, OnboardingTask, OvertimeRequest, ShiftCode, TimeRecord } from "./types";
 import { zoned } from "./time";
 import { buildOnboardingTasks, ORG_ID, seed, TEMPLATE_ID, TODAY } from "./mock-data";
 
@@ -51,6 +51,7 @@ export function useCurrentUser(): { employee: Employee; role: AppRole; canManage
 export const PROTOTYPE_USERS = [
   { id: "e04", label: "Marisol Dela Cruz", sub: "Admin" },
   { id: "e10", label: "Leah Santos", sub: "HR" },
+  { id: "e06", label: "Priya Raman", sub: "Manager" },
   { id: "e16", label: "Miguel Ramos", sub: "Employee" },
   { id: "e25", label: "Paolo Mendoza", sub: "Employee, half-day" },
 ];
@@ -232,6 +233,8 @@ export function recordTime(c: TimeCapture): TimeRecord {
     kind: c.kind,
     recorded_at: nowIso,
     work_date: workDateFor(emp, nowIso),
+    source: "device",
+    correction_request_id: null,
     photo_path: c.photo,
     latitude: c.latitude,
     longitude: c.longitude,
@@ -256,4 +259,67 @@ export function workDateFor(emp: Employee, iso: string): string {
     }
   }
   return z.date;
+}
+
+// ---- Requests: overtime and time corrections -------------------------------------
+
+/** Managers approve their own direct reports; admin and HR approve anyone. Nobody approves their own request. */
+export function canApprove(d: Database, approver: Employee, employeeId: string): boolean {
+  if (approver.id === employeeId) return false;
+  if (approver.role === "admin" || approver.role === "hr") return true;
+  return d.employees.find((e) => e.id === employeeId)?.manager_id === approver.id;
+}
+
+export function isPeriodLocked(d: Database, date: string): boolean {
+  return d.payroll_periods.some((p) => p.status !== "open" && date >= p.start_date && date <= p.end_date);
+}
+
+export function fileOvertime(input: Pick<OvertimeRequest, "employee_id" | "work_date" | "start_at" | "end_at" | "reason">): OvertimeRequest {
+  const req: OvertimeRequest = {
+    ...input, id: `ot-${Date.now().toString(36)}`, status: "pending", filed_at: new Date().toISOString(),
+    decided_by: null, decided_at: null, decision_note: null,
+  };
+  commit({ ...db, overtime_requests: [...db.overtime_requests, req] });
+  return req;
+}
+
+export function fileCorrection(input: { employee_id: string; work_date: string; kind: CorrectionKind; proposed_at: string; reason: string }): CorrectionRequest {
+  const k = input.kind.endsWith("_in") ? "clock_in" : "clock_out";
+  const original = db.time_records.find((r) => r.employee_id === input.employee_id && r.work_date === input.work_date && r.kind === k && r.source === "device");
+  const req: CorrectionRequest = {
+    ...input, id: `cr-${Date.now().toString(36)}`, original_record_id: original?.id ?? null, status: "pending",
+    filed_at: new Date().toISOString(), decided_by: null, decided_at: null, decision_note: null,
+  };
+  commit({ ...db, correction_requests: [...db.correction_requests, req] });
+  return req;
+}
+
+export function cancelRequest(type: "overtime" | "correction", id: string) {
+  if (type === "overtime") commit({ ...db, overtime_requests: db.overtime_requests.map((r) => (r.id === id && r.status === "pending" ? { ...r, status: "cancelled" } : r)) });
+  else commit({ ...db, correction_requests: db.correction_requests.map((r) => (r.id === id && r.status === "pending" ? { ...r, status: "cancelled" } : r)) });
+}
+
+export function decideRequest(type: "overtime" | "correction", id: string, approverId: string, approve: boolean, note: string | null) {
+  const decided = { status: approve ? ("approved" as const) : ("rejected" as const), decided_by: approverId, decided_at: new Date().toISOString(), decision_note: note };
+  if (type === "overtime") {
+    commit({ ...db, overtime_requests: db.overtime_requests.map((r) => (r.id === id ? { ...r, ...decided } : r)) });
+    return;
+  }
+  const req = db.correction_requests.find((r) => r.id === id)!;
+  const emp = db.employees.find((e) => e.id === req.employee_id)!;
+  // Approval appends a correction record. The original device record stays untouched for the audit trail.
+  const rec: TimeRecord | null = approve ? {
+    id: `tr-corr-${id}`, organization_id: ORG_ID, employee_id: req.employee_id, shift_code_id: emp.shift_code_id,
+    kind: req.kind.endsWith("_in") ? "clock_in" : "clock_out", recorded_at: req.proposed_at, work_date: req.work_date,
+    source: "correction", correction_request_id: id, photo_path: null, latitude: null, longitude: null, accuracy_m: null, device: null,
+  } : null;
+  commit({
+    ...db,
+    correction_requests: db.correction_requests.map((r) => (r.id === id ? { ...r, ...decided } : r)),
+    time_records: rec ? [...db.time_records, rec] : db.time_records,
+  });
+}
+
+export function finalizePayroll(periodId: string, byId: string) {
+  commit({ ...db, payroll_periods: db.payroll_periods.map((p) => (p.id === periodId ? { ...p, status: "finalized", finalized_at: new Date().toISOString(), finalized_by: byId } : p)) });
 }

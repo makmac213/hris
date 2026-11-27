@@ -11,6 +11,9 @@ import { OnboardingCaseView } from "@/features/onboarding/OnboardingCaseView";
 import { AttendanceView } from "@/features/time/AttendanceView";
 import { ShiftCodesView } from "@/features/time/ShiftCodesView";
 import { MyTimeView } from "@/features/time/MyTimeView";
+import { ApprovalsView } from "@/features/requests/ApprovalsView";
+import { PayrollView } from "@/features/payroll/PayrollView";
+import { MyPayView } from "@/features/payroll/MyPayView";
 import { usePathname } from "./shims/navigation";
 
 function Routes() {
@@ -25,6 +28,9 @@ function Routes() {
   else if (parts[0] === "time" && parts[1] === "shift-codes") view = <ShiftCodesView />;
   else if (parts[0] === "time") view = <AttendanceView />;
   else if (parts[0] === "my-time") view = <MyTimeView />;
+  else if (parts[0] === "approvals") view = <ApprovalsView />;
+  else if (parts[0] === "payroll") view = <PayrollView />;
+  else if (parts[0] === "my-pay") view = <MyPayView />;
   else view = <DirectoryView />;
   return <AppShell>{view}</AppShell>;
 }

@@ -10,6 +10,12 @@ export type AppRole = "admin" | "hr" | "employee";
 export type ShiftKind = "whole_day" | "half_day";
 export type ShiftSource = "system_default" | "uploaded" | "manual";
 export type TimeRecordKind = "clock_in" | "clock_out";
+export type TimeRecordSource = "device" | "correction";
+export type RequestStatus = "pending" | "approved" | "rejected" | "cancelled";
+export type CorrectionKind = "missing_in" | "missing_out" | "wrong_in" | "wrong_out";
+export type PayBasis = "monthly" | "hourly";
+export type HolidayKind = "regular" | "special_non_working" | "special_working";
+export type PayrollStatus = "open" | "finalized" | "paid";
 
 export interface Department {
   id: string;
@@ -75,11 +81,69 @@ export interface TimeRecord {
   kind: TimeRecordKind;
   recorded_at: string; // ISO timestamp, set by the server
   work_date: string;
-  photo_path: string; // Storage key; the prototype stores a data URL here
-  latitude: number;
-  longitude: number;
-  accuracy_m: number;
+  source: TimeRecordSource; // device = live capture; correction = approved correction request
+  correction_request_id: string | null;
+  // Required for device records (camera photo + GPS); null only for approved corrections.
+  photo_path: string | null; // Storage key; the prototype stores a data URL here
+  latitude: number | null;
+  longitude: number | null;
+  accuracy_m: number | null;
   device: string | null;
+}
+
+export interface Compensation {
+  id: string;
+  employee_id: string;
+  pay_basis: PayBasis;
+  rate: number; // PHP per month (monthly) or per hour (hourly)
+  is_managerial: boolean; // Labor Code Art. 82: no OT, night differential or holiday premium
+  on_ph_payroll: boolean;
+  effective_from: string;
+}
+
+export interface Holiday {
+  date: string;
+  name: string;
+  kind: HolidayKind;
+}
+
+export interface OvertimeRequest {
+  id: string;
+  employee_id: string;
+  work_date: string;
+  start_at: string; // ISO
+  end_at: string; // ISO
+  reason: string;
+  status: RequestStatus;
+  filed_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+}
+
+export interface CorrectionRequest {
+  id: string;
+  employee_id: string;
+  work_date: string;
+  kind: CorrectionKind;
+  proposed_at: string; // ISO time the employee says is correct
+  original_record_id: string | null;
+  reason: string;
+  status: RequestStatus;
+  filed_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+}
+
+export interface PayrollPeriod {
+  id: string;
+  start_date: string;
+  end_date: string;
+  pay_date: string;
+  status: PayrollStatus;
+  finalized_at: string | null;
+  finalized_by: string | null;
 }
 
 export interface EmploymentEvent {
@@ -144,4 +208,9 @@ export interface Database {
   onboarding_tasks: OnboardingTask[];
   shift_codes: ShiftCode[];
   time_records: TimeRecord[];
+  compensation: Compensation[];
+  holidays: Holiday[];
+  overtime_requests: OvertimeRequest[];
+  correction_requests: CorrectionRequest[];
+  payroll_periods: PayrollPeriod[];
 }

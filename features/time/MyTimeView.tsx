@@ -6,8 +6,11 @@ import { formatDate } from "@/lib/format";
 import { formatDuration, formatInstant, shiftHours, shiftKindLabel, summarizeDay } from "@/lib/time";
 import type { TimeRecord } from "@/lib/types";
 import { Button, EmptyState, Icon } from "@/components/ui";
-import { DayStatusBadge, ProofPhoto, formatCoords, mapsUrl, paidMinutes, useNow } from "./shared";
+import { DayStatusBadge, ProofPhoto, RecordWhere, paidMinutes, useNow } from "./shared";
 import { RecordTimeDialog } from "./RecordTimeDialog";
+import { CorrectionDialog, OvertimeDialog } from "@/features/requests/RequestDialogs";
+import { MyRequests } from "@/features/requests/MyRequests";
+import type { CorrectionKind } from "@/lib/types";
 
 export function MyTimeView() {
   const db = useDb();
@@ -16,6 +19,8 @@ export function MyTimeView() {
   const nowIso = new Date(now).toISOString();
   const [recording, setRecording] = useState<TimeRecord["kind"] | null>(null);
   const [justRecorded, setJustRecorded] = useState<TimeRecord | null>(null);
+  const [filing, setFiling] = useState<null | { type: "ot"; date?: string } | { type: "fix"; date?: string; kind?: CorrectionKind }>(null);
+  const [filedNote, setFiledNote] = useState("");
 
   const shift = db.shift_codes.find((s) => s.id === me.shift_code_id);
   if (!shift) {
@@ -58,6 +63,12 @@ export function MyTimeView() {
         </div>
       </header>
 
+      {filedNote && (
+        <div className="toast" role="status">
+          <Icon name="check" size={18} /><span>{filedNote}</span>
+          <button type="button" className="icon-btn" aria-label="Dismiss" onClick={() => setFiledNote("")}><Icon name="x" size={16} /></button>
+        </div>
+      )}
       {justRecorded && (
         <div className="toast" role="status">
           <Icon name="check" size={18} />
@@ -91,7 +102,7 @@ export function MyTimeView() {
                   {r ? (
                     <>
                       <strong className="num">{formatInstant(r.recorded_at, shift.timezone)}</strong>
-                      <a className="muted small-link" href={mapsUrl(r.latitude, r.longitude)} target="_blank" rel="noreferrer">{formatCoords(r.latitude, r.longitude)}</a>
+                      <RecordWhere r={r} className="muted small-link" />
                     </>
                   ) : <span className="muted">Not recorded</span>}
                 </span>
@@ -112,7 +123,7 @@ export function MyTimeView() {
         {history.length === 0 ? <p className="muted">Your past records will show here.</p> : (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Date</th><th className="num">In</th><th className="num">Out</th><th className="num col-md">Worked</th><th>Status</th></tr></thead>
+              <thead><tr><th>Date</th><th className="num">In</th><th className="num">Out</th><th className="num col-md">Worked</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {history.map(({ date, s }) => (
                   <tr key={date}>
@@ -121,6 +132,9 @@ export function MyTimeView() {
                     <td className="num">{s.clockOut ? formatInstant(s.clockOut.recorded_at, shift.timezone) : "—"}</td>
                     <td className="num col-md">{s.workedMinutes ? formatDuration(s.workedMinutes) : "—"}</td>
                     <td><DayStatusBadge s={s} /></td>
+                    <td className="actions-cell">
+                      <Button size="sm" variant="ghost" onClick={() => setFiling({ type: "fix", date, kind: !s.clockOut ? "missing_out" : s.lateMinutes ? "wrong_in" : "wrong_out" })}>Request a fix</Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -128,6 +142,38 @@ export function MyTimeView() {
           </div>
         )}
       </section>
+
+      <section className="section">
+        <div className="section-head">
+          <h2>My requests</h2>
+          <div className="head-actions">
+            <Button size="sm" onClick={() => setFiling({ type: "fix" })}>Request a time correction</Button>
+            <Button size="sm" onClick={() => setFiling({ type: "ot" })}>File overtime</Button>
+          </div>
+        </div>
+        <MyRequests employeeId={me.id} shift={shift} />
+      </section>
+
+      {filing?.type === "ot" && (
+        <OvertimeDialog
+          employee={me}
+          shift={shift}
+          managerial={!!db.compensation.find((c) => c.employee_id === me.id)?.is_managerial}
+          initialDate={filing.date}
+          onClose={() => setFiling(null)}
+          onDone={() => { setFiling(null); setFiledNote("Overtime request sent for approval."); }}
+        />
+      )}
+      {filing?.type === "fix" && (
+        <CorrectionDialog
+          employee={me}
+          shift={shift}
+          initialDate={filing.date}
+          initialKind={filing.kind}
+          onClose={() => setFiling(null)}
+          onDone={() => { setFiling(null); setFiledNote("Correction request sent for approval."); }}
+        />
+      )}
 
       {recording && (
         <RecordTimeDialog

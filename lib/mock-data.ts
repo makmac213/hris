@@ -13,7 +13,14 @@ import type {
   AppRole,
   ShiftCode,
   TimeRecord,
+  Compensation,
+  CorrectionRequest,
+  Holiday,
+  HolidayKind,
+  OvertimeRequest,
+  PayrollPeriod,
 } from "./types";
+import { periodFor } from "./payroll";
 import { addDays } from "./format";
 import { isWeekend, localToIso, phDefaultCodes, spanMinutes, zoned } from "./time";
 
@@ -219,8 +226,38 @@ const onboarding_tasks: OnboardingTask[] = [
   ...buildOnboardingTasks("ob-e36", "2026-12-08", "2026-11-25"),
 ];
 
-// ---- Time records ------------------------------------------------------------
-// Generated relative to the real current time so the attendance view always has a believable "today".
+// ---- Holidays (Proclamation No. 1006, s. 2025) ------------------------------------
+
+const holidays: Holiday[] = [
+  ["2026-01-01", "New Year’s Day", "regular"], ["2026-02-17", "Chinese New Year", "special_non_working"],
+  ["2026-02-25", "EDSA People Power Anniversary", "special_working"], ["2026-04-02", "Maundy Thursday", "regular"],
+  ["2026-04-03", "Good Friday", "regular"], ["2026-04-04", "Black Saturday", "special_non_working"],
+  ["2026-04-09", "Araw ng Kagitingan", "regular"], ["2026-05-01", "Labor Day", "regular"],
+  ["2026-06-12", "Independence Day", "regular"], ["2026-08-21", "Ninoy Aquino Day", "special_non_working"],
+  ["2026-08-31", "National Heroes Day", "regular"], ["2026-11-01", "All Saints’ Day", "special_non_working"],
+  ["2026-11-02", "All Souls’ Day", "special_non_working"], ["2026-11-30", "Bonifacio Day", "regular"],
+  ["2026-12-08", "Feast of the Immaculate Conception", "special_non_working"], ["2026-12-24", "Christmas Eve", "special_non_working"],
+  ["2026-12-25", "Christmas Day", "regular"], ["2026-12-30", "Rizal Day", "regular"],
+  ["2026-12-31", "Last Day of the Year", "special_non_working"],
+].map(([date, name, kind]) => ({ date, name, kind: kind as HolidayKind }));
+
+const isHoliday = (d: string) => holidays.some((h) => h.date === d && h.kind !== "special_working");
+
+// ---- Compensation (Philippine payroll: Manila staff) -------------------------------
+
+const COMP: Record<string, [basis: "monthly" | "hourly", rate: number, managerial?: boolean]> = {
+  e02: ["monthly", 380000, true], e04: ["monthly", 260000, true], e08: ["monthly", 120000], e10: ["monthly", 95000, true],
+  e13: ["monthly", 70000], e16: ["monthly", 68000], e19: ["monthly", 85000], e21: ["monthly", 60000],
+  e22: ["monthly", 52000], e25: ["hourly", 150], e29: ["monthly", 45000], e32: ["monthly", 58000],
+  e34: ["monthly", 72000], e37: ["monthly", 32000],
+};
+const compensation: Compensation[] = Object.entries(COMP).map(([id, [basis, rate, managerial]]) => ({
+  id: `comp-${id}`, employee_id: id, pay_basis: basis, rate, is_managerial: !!managerial, on_ph_payroll: true,
+  effective_from: employees.find((e) => e.id === id)!.start_date,
+}));
+
+// ---- Time records -----------------------------------------------------------------
+// Generated relative to the real current time so "today" and the open payroll period always look lived-in.
 
 export const SEED_NOW = new Date().toISOString();
 
@@ -237,62 +274,108 @@ function rand(seed: string) {
   return ((h >>> 0) % 10000) / 10000;
 }
 
-function recentWorkdays(nowIso: string, count: number): string[] {
-  const today = zoned(nowIso).date;
-  const days: string[] = [];
-  let d = addDays(today, -1);
-  while (days.length < count) {
-    if (!isWeekend(d)) days.unshift(d);
-    d = addDays(d, -1);
-  }
-  return isWeekend(today) ? days : [...days, today];
-}
+const TODAY_LOCAL = zoned(SEED_NOW).date;
+const CURRENT_PERIOD = periodFor(TODAY_LOCAL);
+const PREVIOUS_PERIOD = periodFor(addDays(CURRENT_PERIOD.start_date, -1));
+
+/** Ordinary workdays (no weekends, no holidays) from the previous period's start through today. */
+const WORKDAYS: string[] = [];
+for (let d = PREVIOUS_PERIOD.start_date; d <= TODAY_LOCAL; d = addDays(d, 1)) if (!isWeekend(d) && !isHoliday(d)) WORKDAYS.push(d);
+const W = (fromEnd: number) => WORKDAYS[Math.max(0, WORKDAYS.length - 1 - fromEnd)];
+const LAST_SATURDAY = (() => { let d = addDays(TODAY_LOCAL, -1); while (new Date(`${d}T00:00:00Z`).getUTCDay() !== 6) d = addDays(d, -1); return d; })();
+const SPECIAL_DAY_WORKED = holidays.find((h) => h.kind === "special_non_working" && h.date >= PREVIOUS_PERIOD.start_date && h.date < TODAY_LOCAL && !isWeekend(h.date))?.date;
+
+const at = (day: string, hm: string, tz = "Asia/Manila") => localToIso(day, hm, tz);
 
 function buildTimeRecords(nowIso: string): TimeRecord[] {
   const now = Date.parse(nowIso);
   const out: TimeRecord[] = [];
-  const days = recentWorkdays(nowIso, 4);
-  const today = days[days.length - 1];
+  const today = TODAY_LOCAL;
 
   for (const e of employees) {
     const shift = shift_codes.find((s) => s.id === e.shift_code_id);
     if (!shift || e.status === "offboarded" || e.status === "on_leave") continue;
     const gps = OFFICE_GPS[e.location_id ?? ""] ?? OFFICE_GPS["loc-mnl"];
-    days.forEach((day, di) => {
-      if (day < e.start_date) return;
-      const r = (k: string) => rand(`${e.id}${day}${k}`);
-      // Scripted exceptions so every status shows up.
-      if (e.id === "e13" && di === 1) return; // absent one day
-      if (e.id === "e32" && day === today) return; // hasn't clocked in today
-      let inOffset = Math.round(-14 + r("in") * 16); // mostly 14 min early to 2 min late
-      if (e.id === "e16" && (di === 0 || day === today)) inOffset = 18 + Math.round(r("late") * 10);
-      if (e.id === "e27" && di === 2) inOffset = 34;
-      let outOffset = Math.round(r("out") * 22);
-      if (e.id === "e19" && di === 1) outOffset = -45;
+    const mk = (day: string, kind: TimeRecord["kind"], iso: string, r: (k: string) => number): TimeRecord => ({
+      id: `tr-${e.id}-${day}-${kind}`,
+      organization_id: ORG_ID,
+      employee_id: e.id,
+      shift_code_id: shift.id,
+      kind,
+      recorded_at: iso,
+      work_date: day,
+      source: "device",
+      correction_request_id: null,
+      photo_path: `mock:${e.id}`,
+      latitude: +(gps[0] + (r(kind + "lat") - 0.5) * 0.0016).toFixed(6),
+      longitude: +(gps[1] + (r(kind + "lng") - 0.5) * 0.0016).toFixed(6),
+      accuracy_m: Math.round(6 + r(kind + "acc") * 30),
+      device: DEVICES[Math.floor(r("dev") * DEVICES.length)],
+    });
 
-      const startIso = localToIso(day, shift.start_time, shift.timezone);
+    const days = [...WORKDAYS];
+    if (e.id === "e29") days.push(...holidays.filter((h) => h.date >= PREVIOUS_PERIOD.start_date && h.date < today && h.kind === "special_non_working" && !isWeekend(h.date)).map((h) => h.date));
+    if (e.id === "e10" && SPECIAL_DAY_WORKED) days.push(SPECIAL_DAY_WORKED);
+
+    for (const day of days) {
+      if (day < e.start_date) continue;
+      const r = (k: string) => rand(`${e.id}${day}${k}`);
+      // Scripted exceptions so every rule shows up somewhere.
+      if (e.id === "e13" && day === W(3)) continue; // absent
+      if (e.id === "e32" && day === today) continue; // hasn't timed in yet
+      let inOffset = Math.round(-14 + r("in") * 16); // mostly up to 14 minutes early
+      if (e.id === "e16" && (day === W(4) || day === today)) inOffset = 18 + Math.round(r("late") * 10);
+      if (e.id === "e27" && day === W(2)) inOffset = 34;
+      if (e.id === "e32" && day === W(5)) inOffset = 41; // later corrected
+      let outOffset = Math.round(r("out") * 22);
+      if (e.id === "e19" && day === W(3)) outOffset = -45;
+      if (e.id === "e13" && day === W(5)) outOffset = 152; // stayed for a release (approved OT)
+      if (e.id === "e16" && day === W(1)) outOffset = 95; // OT filed, pending
+      if (e.id === "e19" && day === W(6)) outOffset = 100; // OT filed, rejected
+
+      const startIso = at(day, shift.start_time, shift.timezone);
       const inAt = Date.parse(startIso) + inOffset * 60000;
       const outAt = Date.parse(startIso) + (spanMinutes(shift) + outOffset) * 60000;
-      const mk = (kind: TimeRecord["kind"], at: number): TimeRecord => ({
-        id: `tr-${e.id}-${day}-${kind}`,
-        organization_id: ORG_ID,
-        employee_id: e.id,
-        shift_code_id: shift.id,
-        kind,
-        recorded_at: new Date(at).toISOString(),
-        work_date: day,
-        photo_path: `mock:${e.id}`,
-        latitude: +(gps[0] + (r(kind + "lat") - 0.5) * 0.0016).toFixed(6),
-        longitude: +(gps[1] + (r(kind + "lng") - 0.5) * 0.0016).toFixed(6),
-        accuracy_m: Math.round(6 + r(kind + "acc") * 30),
-        device: DEVICES[Math.floor(r("dev") * DEVICES.length)],
-      });
-      if (inAt < now) out.push(mk("clock_in", inAt));
-      if (outAt < now && !(e.id === "e12" && di === 2)) out.push(mk("clock_out", outAt)); // e12 forgot to clock out once
-    });
+      if (inAt < now) out.push(mk(day, "clock_in", new Date(inAt).toISOString(), r));
+      const forgotOut = (e.id === "e12" && day === W(2)) || (e.id === "e25" && day === W(2));
+      if (outAt < now && !forgotOut) out.push(mk(day, "clock_out", new Date(outAt).toISOString(), r));
+    }
+
+    // Rafael worked a Saturday hiring event, with overtime approved in advance.
+    if (e.id === "e22") {
+      const r = (k: string) => rand(`${e.id}${LAST_SATURDAY}${k}`);
+      out.push(mk(LAST_SATURDAY, "clock_in", at(LAST_SATURDAY, "08:56"), r), mk(LAST_SATURDAY, "clock_out", at(LAST_SATURDAY, "14:04"), r));
+    }
   }
   return out;
 }
+
+// ---- Requests ---------------------------------------------------------------------
+
+const overtime_requests: OvertimeRequest[] = [
+  { id: "ot-1", employee_id: "e13", work_date: W(5), start_at: at(W(5), "19:00"), end_at: at(W(5), "21:30"), reason: "Production release for the payments service", status: "approved", filed_at: at(W(5), "17:10"), decided_by: "e06", decided_at: at(W(5), "17:45"), decision_note: null },
+  { id: "ot-2", employee_id: "e22", work_date: LAST_SATURDAY, start_at: at(LAST_SATURDAY, "09:00"), end_at: at(LAST_SATURDAY, "14:00"), reason: "Campus hiring event at UP Diliman", status: "approved", filed_at: at(addDays(LAST_SATURDAY, -3), "10:00"), decided_by: "e10", decided_at: at(addDays(LAST_SATURDAY, -3), "11:20"), decision_note: null },
+  { id: "ot-3", employee_id: "e16", work_date: W(1), start_at: at(W(1), "19:00"), end_at: at(W(1), "20:30"), reason: "Fix for the checkout bug reported by Customer Success", status: "pending", filed_at: at(W(1), "20:40"), decided_by: null, decided_at: null, decision_note: null },
+  { id: "ot-4", employee_id: "e19", work_date: W(6), start_at: at(W(6), "18:00"), end_at: at(W(6), "19:30"), reason: "Finishing the roadmap deck", status: "rejected", filed_at: at(W(6), "19:35"), decided_by: "e08", decided_at: at(W(5), "09:15"), decision_note: "The deck isn’t due until next week. Please plan it within your hours." },
+];
+
+const correction_requests: CorrectionRequest[] = [
+  { id: "cr-1", employee_id: "e32", work_date: W(5), kind: "wrong_in", proposed_at: at(W(5), "08:57"), original_record_id: `tr-e32-${W(5)}-clock_in`, reason: "The app froze at the entrance. I was at my desk before 9.", status: "approved", filed_at: at(W(5), "10:05"), decided_by: "e10", decided_at: at(W(4), "09:30"), decision_note: "Confirmed with the security log." },
+  { id: "cr-2", employee_id: "e25", work_date: W(2), kind: "missing_out", proposed_at: at(W(2), "12:02"), original_record_id: null, reason: "My phone died before I could record my time out.", status: "pending", filed_at: at(W(1), "08:15"), decided_by: null, decided_at: null, decision_note: null },
+  { id: "cr-3", employee_id: "e12", work_date: W(2), kind: "missing_out", proposed_at: at(W(2), "18:06", "Asia/Singapore"), original_record_id: null, reason: "Forgot to record my time out.", status: "pending", filed_at: at(W(1), "09:00"), decided_by: null, decided_at: null, decision_note: null },
+];
+
+const correctionRecords: TimeRecord[] = correction_requests.filter((c) => c.status === "approved").map((c) => ({
+  id: `tr-corr-${c.id}`, organization_id: ORG_ID, employee_id: c.employee_id,
+  shift_code_id: SHIFT_ASSIGNMENTS[c.employee_id] ?? null,
+  kind: c.kind.endsWith("_in") ? "clock_in" : "clock_out", recorded_at: c.proposed_at, work_date: c.work_date,
+  source: "correction", correction_request_id: c.id, photo_path: null, latitude: null, longitude: null, accuracy_m: null, device: null,
+}));
+
+const payroll_periods: PayrollPeriod[] = [
+  { ...PREVIOUS_PERIOD, status: PREVIOUS_PERIOD.pay_date <= TODAY_LOCAL ? "paid" : "finalized", finalized_at: at(PREVIOUS_PERIOD.end_date, "18:00"), finalized_by: "e04" },
+  { ...CURRENT_PERIOD, status: "open", finalized_at: null, finalized_by: null },
+];
 
 export const seed: Database = {
   departments,
@@ -304,5 +387,10 @@ export const seed: Database = {
   onboarding_cases,
   onboarding_tasks,
   shift_codes,
-  time_records: buildTimeRecords(SEED_NOW),
+  time_records: [...buildTimeRecords(SEED_NOW), ...correctionRecords],
+  compensation,
+  holidays,
+  overtime_requests,
+  correction_requests,
+  payroll_periods,
 };

@@ -1,14 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { recordTime } from "@/lib/store";
 import type { Employee, ShiftCode, TimeRecord } from "@/lib/types";
 import { formatDuration, formatInstant, localToIso, spanMinutes } from "@/lib/time";
 import { Button, Dialog, Icon } from "@/components/ui";
 import { formatCoords, useNow } from "./shared";
 
-// The single-file preview runs in a sandbox with no camera or GPS. It sets this flag so the flow
-// can still be clicked through with a chosen photo and the office location. The Next.js app never does.
+// Photos come only from the live camera (getUserMedia). There is no file upload or gallery picker anywhere.
+// The single-file preview runs in a sandbox with no camera or GPS, so it sets this flag to offer a generated
+// sample photo and the office location. The Next.js app never sets it, and those buttons don't render there.
 const DEMO = process.env.NEXT_PUBLIC_DEMO_FALLBACKS === "true";
 const DEMO_GPS = { latitude: 14.5547, longitude: 121.0244, accuracy_m: 12 };
 
@@ -81,19 +82,17 @@ export function RecordTimeDialog({ employee, shift, kind, workDate, onClose, onD
     stopCamera();
   };
 
-  const fromFile = (ev: ChangeEvent<HTMLInputElement>) => {
-    const f = ev.target.files?.[0];
-    if (!f) return;
-    const img = new Image();
-    img.onload = () => {
-      const c = document.createElement("canvas");
-      const size = Math.min(img.width, img.height);
-      c.width = c.height = 360;
-      c.getContext("2d")!.drawImage(img, (img.width - size) / 2, (img.height - size) / 2, size, size, 0, 0, 360, 360);
-      setPhoto(c.toDataURL("image/jpeg", 0.8));
-      URL.revokeObjectURL(img.src);
-    };
-    img.src = URL.createObjectURL(f);
+  // Preview only: draws a placeholder "photo" so the flow can be clicked through without a camera.
+  const samplePhoto = () => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 360;
+    const g = c.getContext("2d")!;
+    g.fillStyle = "#dfe6f3"; g.fillRect(0, 0, 360, 360);
+    g.fillStyle = "#9fb0cc"; g.beginPath(); g.arc(180, 150, 62, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(180, 360, 130, 110, 0, Math.PI, 0); g.fill();
+    g.fillStyle = "#47566e"; g.font = "600 18px sans-serif"; g.textAlign = "center";
+    g.fillText("Sample photo · preview only", 180, 40);
+    setPhoto(c.toDataURL("image/jpeg", 0.8));
   };
 
   const retake = () => { setPhoto(null); startCamera(); };
@@ -149,12 +148,7 @@ export function RecordTimeDialog({ employee, shift, kind, workDate, onClose, onD
           ) : camera.state === "error" ? (
             <>
               <Button size="sm" onClick={startCamera}>Try camera again</Button>
-              {DEMO && (
-                <label className="btn btn-ghost btn-sm file-btn">
-                  <input type="file" accept="image/*" capture="user" onChange={fromFile} />
-                  Choose a photo (preview only)
-                </label>
-              )}
+              {DEMO && <Button size="sm" variant="ghost" onClick={samplePhoto}>Use sample photo (preview only)</Button>}
             </>
           ) : null}
         </div>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { PROTOTYPE_USERS, setCurrentUser, useCurrentUser, useDb } from "@/lib/store";
+import { PROTOTYPE_USERS, canApprove, setCurrentUser, useCurrentUser, useDb } from "@/lib/store";
 import { Avatar, Icon } from "@/components/ui";
 import type { IconName } from "@/components/ui/Icon";
 
@@ -18,6 +18,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => setOpen(false), [pathname]);
 
   const activeOnboarding = db.onboarding_cases.filter((c) => c.status === "in_progress").length;
+  const isManager = db.employees.some((e) => e.manager_id === me.id && e.status !== "offboarded");
+  const pendingForMe = [...db.overtime_requests, ...db.correction_requests].filter((r) => r.status === "pending" && canApprove(db, me, r.employee_id)).length;
 
   const groups: { title: string; items: NavItem[] }[] = canManage
     ? [
@@ -26,14 +28,23 @@ export function AppShell({ children }: { children: ReactNode }) {
           { href: "/org-chart", label: "Org chart", icon: "org" },
           { href: "/onboarding", label: "Onboarding", icon: "checklist", count: activeOnboarding },
         ] },
-        { title: "Time", items: [
-          { href: "/my-time", label: "My time", icon: "clock" },
+        { title: "Time and pay", items: [
           { href: "/time", label: "Attendance", icon: "calendar", exact: true },
+          { href: "/approvals", label: "Approvals", icon: "check", count: pendingForMe },
+          { href: "/payroll", label: "Payroll", icon: "wallet" },
           { href: "/time/shift-codes", label: "Shift codes", icon: "shift" },
+        ] },
+        { title: "Me", items: [
+          { href: "/my-time", label: "My time", icon: "clock" },
+          { href: "/my-pay", label: "My pay", icon: "file" },
         ] },
       ]
     : [
-        { title: "Me", items: [{ href: "/my-time", label: "My time", icon: "clock" }] },
+        { title: "Me", items: [
+          { href: "/my-time", label: "My time", icon: "clock" },
+          { href: "/my-pay", label: "My pay", icon: "wallet" },
+          ...(isManager ? [{ href: "/approvals", label: "Team approvals", icon: "check" as IconName, count: pendingForMe }] : []),
+        ] },
         { title: "Company", items: [
           { href: "/employees", label: "Employees", icon: "users" },
           { href: "/org-chart", label: "Org chart", icon: "org" },
@@ -43,7 +54,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const switchUser = (id: string) => {
     setCurrentUser(id);
     const next = PROTOTYPE_USERS.find((u) => u.id === id);
-    if (next?.sub.startsWith("Employee")) router.push("/my-time");
+    if (next && !["Admin", "HR"].includes(next.sub)) router.push(next.sub === "Manager" ? "/approvals" : "/my-time");
   };
 
   return (
@@ -72,7 +83,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                       <Link href={n.href} className={`nav-link ${active ? "nav-active" : ""}`} aria-current={active ? "page" : undefined}>
                         <Icon name={n.icon} />
                         <span>{n.label}</span>
-                        {n.count ? <span className="nav-count" aria-label={`${n.count} in progress`}>{n.count}</span> : null}
+                        {n.count ? <span className="nav-count" aria-label={`${n.count} waiting`}>{n.count}</span> : null}
                       </Link>
                     </li>
                   );
@@ -86,7 +97,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Avatar person={me} size={32} />
             <span className="person-text">
               <span className="person-name">{me.preferred_name ?? me.first_name} {me.last_name}</span>
-              <span className="person-sub">{role === "admin" ? "Admin" : role === "hr" ? "HR" : "Employee"}</span>
+              <span className="person-sub">{role === "admin" ? "Admin" : role === "hr" ? "HR" : isManager ? "Manager" : "Employee"}</span>
             </span>
           </div>
           <label className="switcher">

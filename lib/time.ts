@@ -122,8 +122,10 @@ export interface DaySummary {
 /** Records for one employee on one work date, summarized against their shift. */
 export function summarizeDay(records: TimeRecord[], shift: ShiftCode | undefined, date: string, nowIso: string, onLeave = false): DaySummary {
   const sorted = [...records].sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
-  const clockIn = sorted.find((r) => r.kind === "clock_in");
-  const clockOut = [...sorted].reverse().find((r) => r.kind === "clock_out");
+  // An approved correction overrides the device record of the same kind; originals are never edited.
+  const latestCorrection = (k: TimeRecord["kind"]) => [...sorted].reverse().find((r) => r.kind === k && r.source === "correction");
+  const clockIn = latestCorrection("clock_in") ?? sorted.find((r) => r.kind === "clock_in");
+  const clockOut = latestCorrection("clock_out") ?? [...sorted].reverse().find((r) => r.kind === "clock_out");
   const base = { clockIn, clockOut, records: sorted, lateMinutes: 0, undertimeMinutes: 0, workedMinutes: 0 };
   if (onLeave) return { ...base, status: "on_leave" };
   if (!shift) return { ...base, status: clockIn ? (clockOut ? "done" : "working") : "no_shift" };
