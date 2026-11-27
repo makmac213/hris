@@ -44,7 +44,7 @@ Every request sends `Authorization: Bearer <token>`. There are two kinds of toke
 These are the same rules as the web app:
 
 - Admin and HR can see and change everything in their organization.
-- A manager sees their direct reports and decides their requests.
+- A manager sees their direct reports. Requests are decided by the person's direct supervisor or by an approver role: admin always, HR and operations when turned on ([approvals.md](approvals.md)).
 - Operations sees and changes everyone's schedule, and nothing about pay or HR records.
 - Everyone sees and files their own records.
 - Nobody approves their own request.
@@ -103,6 +103,8 @@ These are the same rules as the web app:
 | `GET /payslips` | Own payslips. Admin and HR can pass `employee_id`. Filter: `period_id` | Self, admin, HR |
 | `GET /year-end/{year}` | Annualization and 2316 figures for everyone | Admin, HR |
 | `GET`, `POST`, `PATCH`, `DELETE /departments`, `/branches`, `/clients` and `…/{id}/members` | Organization. See [scheduling.md](scheduling.md#api). | Read: anyone. Write: admin, HR |
+| `GET`, `PATCH /approval-settings` | Which roles approve, besides each person's direct supervisor. See [approvals.md](approvals.md). | Read: anyone. Write: admin, HR |
+| `GET /approvers?employee_id=` | Who can decide a person's requests | The person, their supervisor, approvers, admin, HR |
 | `GET`, `PUT`, `DELETE /schedule`, `GET /schedule/gaps`, `GET`, `PATCH /schedule/settings` | The operations schedule. See [scheduling.md](scheduling.md#api). | Operations, admin, HR; managers read their team |
 | `GET /notifications`, `POST /notifications/read` | Your notifications | The person |
 | `GET /openapi.json` | The machine-readable spec | Anyone |

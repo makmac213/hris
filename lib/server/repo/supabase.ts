@@ -5,7 +5,8 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { DEFAULT_SETTINGS } from "@/lib/payroll";
-import type { Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
+import { DEFAULT_APPROVAL_SETTINGS } from "@/lib/approvals";
+import type { ApprovalSettings, Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
 import { DEFAULT_SCHEDULE_SETTINGS } from "@/lib/schedule";
 import type { ApiKey, Repository, Row, StoredResponse, Table } from "./types";
 
@@ -65,6 +66,8 @@ export class SupabaseRepository implements Repository {
     db.payroll_settings = { ...DEFAULT_SETTINGS, ...(settings ?? {}) } as PayrollSettings;
     const { data: sched } = await this.sb.from("schedule_settings").select("horizon_days, short_notice_hours").eq("organization_id", orgId).maybeSingle();
     db.schedule_settings = { ...DEFAULT_SCHEDULE_SETTINGS, ...(sched ?? {}) } as ScheduleSettings;
+    const { data: appr } = await this.sb.from("approval_settings").select("approver_roles").eq("organization_id", orgId).maybeSingle();
+    db.approval_settings = { ...DEFAULT_APPROVAL_SETTINGS, ...(appr ?? {}) } as ApprovalSettings;
     return db;
   }
 
@@ -98,6 +101,12 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.sb.from("schedule_settings").upsert({ organization_id: orgId, ...patch } as never).select("horizon_days, short_notice_hours").single();
     if (error) throw new Error(`schedule_settings: ${error.message}`);
     return { ...DEFAULT_SCHEDULE_SETTINGS, ...(data as Partial<ScheduleSettings>) };
+  }
+
+  async updateApprovalSettings(orgId: string, patch: Partial<ApprovalSettings>) {
+    const { data, error } = await this.sb.from("approval_settings").upsert({ organization_id: orgId, ...patch } as never).select("approver_roles").single();
+    if (error) throw new Error(`approval_settings: ${error.message}`);
+    return { ...DEFAULT_APPROVAL_SETTINGS, ...(data as Partial<ApprovalSettings>) };
   }
 
   async updateSettings(orgId: string, patch: Partial<PayrollSettings>) {

@@ -29,7 +29,7 @@ docs/                   Planning and documentation
 
 ## Data layer
 
-`lib/store.ts` keeps the database in memory and exposes it through `useSyncExternalStore`. Views call `useDb()` to read and named functions to write: `createEmployee`, `updateEmployee`, `assignShift`, `recordTime`, `fileOvertime`, `fileCorrection`, `decideRequest`, `finalizePayroll` and so on. Permissions live there too (`canApprove`: admin and HR approve anyone, a manager approves their direct reports, nobody approves their own).
+`lib/store.ts` keeps the database in memory and exposes it through `useSyncExternalStore`. Views call `useDb()` to read and named functions to write: `createEmployee`, `updateEmployee`, `assignShift`, `recordTime`, `fileOvertime`, `fileCorrection`, `decideRequest`, `finalizePayroll` and so on. Permissions live there too. `canApprove` comes from `lib/approvals.ts`: the direct supervisor, or an approver role (admin always, HR and operations if turned on), never one's own ([approvals.md](approvals.md)).
 
 The payroll engine in `lib/payroll.ts` is pure: `computePayslip(db, employee, period, now)` reads rows and returns a payslip. In production it runs on the server (an Edge Function or server action) and its result is frozen into `payroll_items` when a period is finalized.
 
@@ -38,7 +38,8 @@ The payroll engine in `lib/payroll.ts` is pure: `computePayslip(db, employee, pe
 | Role | Sees |
 | --- | --- |
 | Admin, HR | Everything: people, attendance, approvals, payroll, shift codes, plus their own time and pay |
-| Manager (anyone with reports) | Their own time and pay, and approvals for their team |
+| Manager (anyone with reports) | Their own time and pay, and approvals for their direct reports |
+| Approver roles | HR by default, operations if turned on: approvals for everyone ([approvals.md](approvals.md)) |
 | Employee | My time, My pay, the directory and the org chart |
 
 In the prototype, the "view as" switcher stands in for sign-in.

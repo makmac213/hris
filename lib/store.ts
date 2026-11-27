@@ -5,7 +5,7 @@
 // (and React Query / server actions) without touching the views.
 
 import { useSyncExternalStore } from "react";
-import type { Client, Department, Location, ScheduleSettings, LeaveAdjustment, LeaveRequest, LeaveType, SeparationReason, AppRole, Compensation, CorrectionKind, CorrectionRequest, Database, Employee, EmployeePayrollSettings, OnboardingCase, OnboardingTask, OvertimeRequest, PayItem, PayItemType, PayrollSettings, ShiftCode, TimeRecord } from "./types";
+import type { ApprovalSettings, Client, Department, Location, ScheduleSettings, LeaveAdjustment, LeaveRequest, LeaveType, SeparationReason, AppRole, Compensation, CorrectionKind, CorrectionRequest, Database, Employee, EmployeePayrollSettings, OnboardingCase, OnboardingTask, OvertimeRequest, PayItem, PayItemType, PayrollSettings, ShiftCode, TimeRecord } from "./types";
 import { type AssignmentInput, assignmentId, checkAssignments, leaveNotifications, lockReason, scheduleFor, toAssignments, workDateFor as workDateForDb } from "./schedule";
 import { buildOnboardingTasks, ORG_ID, seed, TEMPLATE_ID, TODAY } from "./mock-data";
 import { probationEndFor } from "./employment";
@@ -268,12 +268,8 @@ export const workDateFor = (emp: Employee, iso: string) => workDateForDb(db, emp
 
 // ---- Requests: overtime and time corrections -------------------------------------
 
-/** Managers approve their own direct reports; admin and HR approve anyone. Nobody approves their own request. */
-export function canApprove(d: Database, approver: Employee, employeeId: string): boolean {
-  if (approver.id === employeeId) return false;
-  if (approver.role === "admin" || approver.role === "hr") return true;
-  return d.employees.find((e) => e.id === employeeId)?.manager_id === approver.id;
-}
+/** Direct supervisor, or a role the organization allows (lib/approvals.ts). */
+export { canApprove } from "./approvals";
 
 export function isPeriodLocked(d: Database, date: string): boolean {
   return d.payroll_periods.some((p) => p.status !== "open" && date >= p.start_date && date <= p.end_date);
@@ -502,6 +498,10 @@ export function resetSchedule(cells: { employee_id: string; work_date: string }[
   }).map((c) => assignmentId(c.employee_id, c.work_date)));
   commit({ ...db, shift_assignments: db.shift_assignments.filter((a) => !ok.has(a.id)) });
   return ok.size;
+}
+
+export function updateApprovalSettings(patch: Partial<ApprovalSettings>) {
+  commit({ ...db, approval_settings: { ...db.approval_settings, ...patch } });
 }
 
 export function updateScheduleSettings(patch: Partial<ScheduleSettings>) {

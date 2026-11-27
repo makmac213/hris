@@ -301,3 +301,28 @@ test("schedule settings: operations can widen the window within limits", async (
   assert.equal((await call("PATCH", "/schedule/settings", { as: "e40", body: { horizon_days: 400 } })).status, 422);
   assert.equal((await call("PATCH", "/schedule/settings", { as: "e16", body: { horizon_days: 30 } })).status, 403);
 });
+
+test("approvers: the direct supervisor, plus the roles the organization turns on", async () => {
+  const day = "2026-12-03";
+  const filed = await call("POST", "/leave-requests", { as: "e19", body: { leave_type_id: "lt-vl", start_date: day, end_date: day, reason: "Family errand" } });
+  assert.equal(filed.status, 201);
+  assert.ok(filed.body.approver_ids.includes("e08"), "their supervisor");
+  assert.ok(filed.body.approver_ids.includes("e04") && filed.body.approver_ids.includes("e10"), "admin and HR by default");
+  assert.ok(!filed.body.approver_ids.includes("e40"), "operations is off by default");
+
+  const who = await call("GET", "/approvers?employee_id=e19", { as: "e19" });
+  assert.equal(who.body.supervisor_id, "e08");
+  assert.deepEqual(who.body.roles, ["admin", "hr"]);
+
+  assert.equal((await call("POST", `/leave-requests/${filed.body.id}/decision`, { as: "e40", body: { approve: true } })).status, 403);
+  assert.equal((await call("PATCH", "/approval-settings", { as: "e19", body: { approver_roles: ["operations"] } })).status, 403, "employees can't change who approves");
+  assert.equal((await call("PATCH", "/approval-settings", { as: "e10", body: { approver_roles: ["admin"] } })).status, 422, "admin is always on, not a choice");
+  const saved = await call("PATCH", "/approval-settings", { as: "e10", body: { approver_roles: ["operations"] } });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.body.approver_roles, ["operations"]);
+
+  assert.equal((await call("POST", `/leave-requests/${filed.body.id}/decision`, { as: "e22", body: { approve: true } })).status, 403, "HR is now off");
+  const ok = await call("POST", `/leave-requests/${filed.body.id}/decision`, { as: "e40", body: { approve: true } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.decided_by, "e40");
+});

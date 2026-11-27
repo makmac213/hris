@@ -60,7 +60,7 @@ function db(o: { employee?: Partial<Employee>; comp?: Partial<Compensation>; rec
     shift_codes: o.shifts ?? [DAY, NIGHT], time_records: o.records ?? [], compensation: [comp(o.comp)], holidays: o.holidays ?? [], overtime_requests: o.ot ?? [], correction_requests: [], payroll_periods: [],
     payroll_settings: { ...DEFAULT_SETTINGS, sss_basis: "monthly_rate", ...o.settings }, employee_payroll_settings: o.overrides ?? [], pay_items: o.items ?? [], pay_item_types: o.types ?? [],
     leave_types: o.leaveTypes ?? [], leave_requests: o.leave ?? [], leave_adjustments: [], payroll_openings: o.openings ?? [],
-    clients: [], shift_assignments: o.assignments ?? [], schedule_settings: { horizon_days: 60, short_notice_hours: 48 }, notifications: [],
+    clients: [], shift_assignments: o.assignments ?? [], schedule_settings: { horizon_days: 60, short_notice_hours: 48 }, approval_settings: { approver_roles: ["hr"] }, notifications: [],
   };
 }
 const P = (date: string): PayrollPeriod => ({ ...periodFor(date), status: "open", finalized_at: null, finalized_by: null });

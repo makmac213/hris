@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { canApprove, decideLeave, decideRequest, isPeriodLocked, today, useCurrentUser, useDb } from "@/lib/store";
+import { canApprove, decideLeave, decideRequest, isPeriodLocked, today, updateApprovalSettings, useCurrentUser, useDb } from "@/lib/store";
+import { approverRoles } from "@/lib/approvals";
+import type { ApprovalSettings } from "@/lib/types";
 import { displayName, formatDate } from "@/lib/format";
 import { formatDuration, formatInstant } from "@/lib/time";
 import { effectiveInOut } from "@/lib/payroll";
 import type { CorrectionRequest, Employee, LeaveRequest, OvertimeRequest } from "@/lib/types";
 import { leaveBalance, requestDays } from "@/lib/leave";
-import { Button, EmptyState, Icon, PersonCell } from "@/components/ui";
+import { Button, Dialog, EmptyState, Icon, PersonCell } from "@/components/ui";
 import { ProofPhoto } from "@/features/time/shared";
 import { RequestStatusBadge } from "./MyRequests";
 import { correctionKindLabel } from "./RequestDialogs";
@@ -23,7 +25,8 @@ const kindLabel = { overtime: "overtime", correction: "time correction", leave: 
 
 export function ApprovalsView() {
   const db = useDb();
-  const { employee: me } = useCurrentUser();
+  const { employee: me, canManage } = useCurrentUser();
+  const [rules, setRules] = useState(false);
   const [tab, setTab] = useState<"pending" | "decided">("pending");
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -37,10 +40,11 @@ export function ApprovalsView() {
 
   const pending = items.filter((it) => it.r.status === "pending").sort((a, b) => a.r.filed_at.localeCompare(b.r.filed_at));
   const decided = items.filter((it) => it.r.status === "approved" || it.r.status === "rejected").sort((a, b) => (b.r.decided_at ?? "").localeCompare(a.r.decided_at ?? ""));
-  const isApprover = me.role !== "employee" || db.employees.some((e) => e.manager_id === me.id);
+  const byRole = approverRoles(db).includes(me.role);
+  const isApprover = byRole || db.employees.some((e) => e.manager_id === me.id && e.status !== "offboarded");
 
   if (!isApprover) {
-    return <div className="page"><EmptyState title="You don’t approve requests" body="Approvals go to each person’s manager, and to HR." action={<Link href="/my-time" className="btn btn-secondary btn-md">Go to My time</Link>} /></div>;
+    return <div className="page"><EmptyState title="You don’t approve requests" body={`Requests go to each person’s direct supervisor, and to ${roleList(db.approval_settings)}.`} action={<Link href="/my-time" className="btn btn-secondary btn-md">Go to My time</Link>} /></div>;
   }
 
   const decide = (it: Item, approve: boolean) => {
@@ -58,11 +62,13 @@ export function ApprovalsView() {
         <div>
           <h1>Approvals</h1>
           <p className="muted">
-            {me.role === "employee" ? "Requests from your direct reports." : "Requests from everyone. Managers can also approve for their own teams."}
+            {byRole ? "Requests from everyone. Each person’s direct supervisor can also approve them." : "Requests from your direct reports."}
             {" "}Overtime is paid only once approved. Approved leave shows in attendance and payroll.
           </p>
         </div>
+        {canManage && <Button icon="settings" onClick={() => setRules(true)}>Who approves</Button>}
       </header>
+      {rules && <ApproverRolesDialog onClose={() => setRules(false)} onDone={(m) => { setRules(false); setDone(m); }} />}
 
       {done && (
         <div className="toast" role="status">
@@ -192,5 +198,34 @@ function OvertimeDetail({ r, tz, clockIn, clockOut }: { r: OvertimeRequest; tz: 
               : "No time records cover this period yet. Nothing would be paid unless they do."}
       </p>
     </div>
+  );
+}
+
+const ROLE_NAME = { hr: "HR", operations: "Operations" } as const;
+function roleList(a: ApprovalSettings) {
+  const l = [...a.approver_roles.map((r) => (r === "hr" ? "HR" : "operations")), "admin"];
+  return l.length === 1 ? l[0] : `${l.slice(0, -1).join(", ")} and ${l[l.length - 1]}`;
+}
+
+function ApproverRolesDialog({ onClose, onDone }: { onClose: () => void; onDone: (msg: string) => void }) {
+  const db = useDb();
+  const [roles, setRoles] = useState(new Set(db.approval_settings.approver_roles));
+  const flip = (r: "hr" | "operations") => setRoles((p) => { const n = new Set(p); if (n.has(r)) n.delete(r); else n.add(r); return n; });
+  const save = () => {
+    const next = (["hr", "operations"] as const).filter((r) => roles.has(r));
+    updateApprovalSettings({ approver_roles: next });
+    onDone(`Saved. Requests now go to each person’s direct supervisor, and to ${roleList({ approver_roles: next })}.`);
+  };
+  return (
+    <Dialog title="Who approves requests" onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
+      <div className="stack-md">
+        <p>Leave, overtime and time corrections go to the person’s <strong>direct supervisor</strong>, and to anyone in the roles below. Nobody approves their own request.</p>
+        <label className="toggle-row"><input type="checkbox" checked disabled /><span>Admin <span className="muted">(always, so no request is left without an approver)</span></span></label>
+        {(["hr", "operations"] as const).map((r) => (
+          <label key={r} className="toggle-row"><input type="checkbox" checked={roles.has(r)} onChange={() => flip(r)} /><span>{ROLE_NAME[r]}</span></label>
+        ))}
+      </div>
+    </Dialog>
   );
 }

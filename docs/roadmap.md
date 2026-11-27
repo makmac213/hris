@@ -9,7 +9,7 @@
 | 3 | Payroll (PH rules), overtime requests, time correction requests, approvals, payslips, payroll settings, allowances and deductions, 13th month, compliance audit with tests | PR #2 |
 | 3b | Company-defined pay types; leave (statutory floor plus company policies); employment terms and alerts; regional minimum wages; year-end annualization, 2316 and 1601-C figures; final pay with separation and retirement pay | PR #2 |
 | 3c | REST API `/api/v1` | PR #3 |
-| 4 | Departments, branches and clients; operations schedule with rotating rest days, leave gaps, cover and notifications; schedule drives attendance, leave days and payroll | `feature/scheduling` |
+| 4 | Departments, branches and clients; operations schedule with rotating rest days, leave gaps, cover and notifications; schedule drives attendance, leave days and payroll; approvals by direct supervisor plus configurable approver roles | `feature/scheduling` |
 
 ## Next
 

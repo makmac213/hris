@@ -35,6 +35,7 @@ import { addDays } from "./format";
 import { probationEndFor } from "./employment";
 import { STATUTORY_LEAVES } from "./leave";
 import { isWeekend, localToIso, phDefaultCodes, spanMinutes, zoned } from "./time";
+import { DEFAULT_APPROVAL_SETTINGS } from "./approvals";
 import { assignmentId, DEFAULT_SCHEDULE_SETTINGS, leaveNotifications } from "./schedule";
 
 // Sample company for the prototype. All people are fictional.
@@ -621,6 +622,7 @@ export const seed: Database = {
   clients,
   shift_assignments,
   schedule_settings,
+  approval_settings: { ...DEFAULT_APPROVAL_SETTINGS },
   notifications: [] as AppNotification[],
 };
 

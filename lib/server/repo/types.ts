@@ -1,9 +1,9 @@
 // Storage boundary. Services only talk to a Repository, so the same rules run on the in-memory store
 // (development, tests) and on Supabase (production).
 
-import type { Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
+import type { ApprovalSettings, Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
 
-/** Tables that hold rows. `payroll_settings` and `schedule_settings` are one object per organization, with their own methods. */
+/** Tables that hold rows. `payroll_settings`, `schedule_settings` and `approval_settings` are one object per organization, with their own methods. */
 export type Table = { [K in keyof Database]: Database[K] extends unknown[] ? K : never }[keyof Database];
 export type Row<T extends Table> = Database[T][number];
 
@@ -39,6 +39,7 @@ export interface Repository {
   remove<T extends Table>(table: T, key: keyof Row<T> & string, values: string[]): Promise<number>;
   updateSettings(orgId: string, patch: Partial<PayrollSettings>): Promise<void>;
   updateScheduleSettings(orgId: string, patch: Partial<ScheduleSettings>): Promise<ScheduleSettings>;
+  updateApprovalSettings(orgId: string, patch: Partial<ApprovalSettings>): Promise<ApprovalSettings>;
   newId(prefix: string): string;
 
   findEmployeeByUser(userId: string): Promise<{ employeeId: string; orgId: string } | null>;

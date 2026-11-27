@@ -1,6 +1,7 @@
-// Who is calling, and what they may do. Same rules as the web app (lib/store.ts canApprove).
+// Who is calling, and what they may do. Same rules as the web app (lib/approvals.ts).
 
 import type { AppRole, Database, Employee } from "@/lib/types";
+import { canApprove } from "@/lib/approvals";
 import { forbidden } from "./errors";
 import type { ApiKey, ApiScope, Repository } from "./repo/types";
 
@@ -38,13 +39,10 @@ export function canSee(ctx: Ctx, db: Database, employeeId: string, opts: { manag
   return opts.manager && db.employees.find((e) => e.id === employeeId)?.manager_id === me;
 }
 
-/** Managers decide their direct reports' requests; admin and HR decide anyone's. Nobody decides their own. */
+/** The direct supervisor, or anyone whose role the organization allows to approve (lib/approvals.ts). Nobody decides their own. */
 export function canDecide(ctx: Ctx, db: Database, employeeId: string) {
   if (ctx.principal.kind === "key") return false; // a decision needs a person
-  const me = ctx.principal.employee;
-  if (me.id === employeeId) return false;
-  if (me.role === "admin" || me.role === "hr") return true;
-  return db.employees.find((e) => e.id === employeeId)?.manager_id === me.id;
+  return canApprove(db, ctx.principal.employee, employeeId);
 }
 
 export function deciderId(ctx: Ctx): string {

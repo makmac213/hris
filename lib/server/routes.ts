@@ -25,7 +25,7 @@ export interface Route {
 const requestRoutes = (kind: "overtime" | "correction" | "leave", plural: string, fileSchema: ZodTypeAny, file: (ctx: Ctx, b: unknown) => Promise<unknown>, label: string): Route[] => [
   { method: "GET", path: `/${plural}`, tag: "Requests", summary: `List ${label} requests`, who: "Own requests by default; scope=to_decide for an approver's queue", query: req.ListRequests, run: (c, _p, q) => req.listRequests(c, kind, q) },
   { method: "POST", path: `/${plural}`, tag: "Requests", summary: `File a ${label} request`, who: "The person", body: fileSchema, created: true, run: (c, _p, _q, b) => file(c, b) },
-  { method: "POST", path: `/${plural}/{id}/decision`, tag: "Requests", summary: `Approve or reject a ${label} request`, who: "Their manager, admin or HR; never self", body: req.Decision, run: (c, p, _q, b) => req.decide(c, kind, p.id, b) },
+  { method: "POST", path: `/${plural}/{id}/decision`, tag: "Requests", summary: `Approve or reject a ${label} request`, who: "Their direct supervisor, or an approver role (admin always; HR and operations if turned on); never self", body: req.Decision, run: (c, p, _q, b) => req.decide(c, kind, p.id, b) },
   { method: "POST", path: `/${plural}/{id}/cancel`, tag: "Requests", summary: `Withdraw a pending ${label} request`, who: "The person who filed it", run: (c, p) => req.cancel(c, kind, p.id) },
 ];
 
@@ -54,6 +54,9 @@ export const ROUTES: Route[] = [
   { method: "PATCH", path: "/clients/{id}", tag: "Organization", summary: "Change or archive a client (archiving takes everyone off it)", who: "Admin, HR", body: org.UpdateClient, run: (c, p, _q, b) => org.updateClient(c, p.id, b) },
   { method: "POST", path: "/clients/{id}/members", tag: "Organization", summary: "Put people on a client account", who: "Admin, HR", body: org.Assign, run: (c, p, _q, b) => org.assignTo(c, "client", p.id, b) },
   { method: "DELETE", path: "/clients/{id}/members", tag: "Organization", summary: "Take people off a client account", who: "Admin, HR", body: org.Assign, run: (c, p, _q, b) => org.unassignClient(c, p.id, b) },
+  { method: "GET", path: "/approval-settings", tag: "Requests", summary: "Which roles approve requests, besides each person's direct supervisor", who: "Anyone", run: (c) => req.getApprovalSettings(c) },
+  { method: "PATCH", path: "/approval-settings", tag: "Requests", summary: "Turn HR or operations on or off as approvers (admin always approves)", who: "Admin, HR", body: req.ApprovalSettingsBody, run: (c, _p, _q, b) => req.putApprovalSettings(c, b) },
+  { method: "GET", path: "/approvers", tag: "Requests", summary: "Who can decide a person's leave, overtime and correction requests", who: "The person, their supervisor, approvers, admin and HR", query: req.ApproversQuery, run: (c, _p, q) => req.getApprovers(c, q) },
   { method: "GET", path: "/schedule", tag: "Schedule", summary: "The schedule: each person's shift, leave and coverage gaps per day (up to 42 days)", who: "Operations, admin, HR: everyone; managers: their team; others: themselves", query: sched.ScheduleQuery, run: (c, _p, q) => sched.getSchedule(c, q) },
   { method: "PUT", path: "/schedule", tag: "Schedule", summary: "Assign shifts or rest days; refused on approved leave, warned on pending leave", who: "Operations, admin, HR", body: sched.PutSchedule, run: (c, _p, _q, b) => sched.putSchedule(c, b) },
   { method: "DELETE", path: "/schedule", tag: "Schedule", summary: "Put days back on each person's default shift", who: "Operations, admin, HR", body: sched.ResetSchedule, run: (c, _p, _q, b) => sched.resetSchedule(c, b) },

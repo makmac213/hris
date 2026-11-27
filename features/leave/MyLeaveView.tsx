@@ -1,5 +1,6 @@
 "use client";
 
+import { approverText } from "@/lib/approvals";
 import { useState, type FormEvent } from "react";
 import { cancelLeave, fileLeave, isPeriodLocked, today, useCurrentUser, useDb } from "@/lib/store";
 import { displayName, formatDate } from "@/lib/format";
@@ -180,7 +181,7 @@ export function LeaveDialog({ employee, initialType, onClose, onDone }: { employ
     setErrors(e);
     if (Object.keys(e).length) return;
     fileLeave({ employee_id: employee.id, leave_type_id: t.id, start_date: f.start, end_date: f.end, half_day: f.half, reason: f.reason.trim() });
-    onDone(`${t.name} requested for ${f.half ? "half a day" : days(n)}. Your manager and HR can approve it.`);
+    onDone(`${t.name} requested for ${f.half ? "half a day" : days(n)}. It goes to ${approverText(db, employee.id, displayName)}.`);
   };
 
   return (
@@ -212,7 +213,7 @@ export function LeaveDialog({ employee, initialType, onClose, onDone }: { employ
           </label>
         )}
         <div className="span-2">
-          <Field label="Note for your approver" error={errors.reason} hint={t.requires_document ? `You’ll need: ${t.requires_document}.` : undefined}>
+          <Field label="Note for your approver" error={errors.reason} hint={`Goes to ${approverText(db, employee.id, displayName)}.${t.requires_document ? ` You’ll need: ${t.requires_document}.` : ""}`}>
             {(id, d) => <textarea id={id} rows={2} aria-describedby={d} value={f.reason} onChange={(e) => set("reason", e.target.value)} />}
           </Field>
         </div>

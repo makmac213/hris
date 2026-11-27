@@ -1,5 +1,7 @@
 "use client";
 
+import { useDarkMode } from "./theme";
+import { approverRoles } from "@/lib/approvals";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -16,11 +18,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const db = useDb();
   const { employee: me, canManage, canSchedule, role } = useCurrentUser();
   const [open, setOpen] = useState(false);
+  const [dark, setDark] = useDarkMode();
   useEffect(() => setOpen(false), [pathname]);
 
   const activeOnboarding = db.onboarding_cases.filter((c) => c.status === "in_progress").length;
   const isManager = db.employees.some((e) => e.manager_id === me.id && e.status !== "offboarded");
   const openGaps = canSchedule ? coverageGaps(db, db.employees.filter((e) => e.status !== "offboarded"), datesFrom(today(), 14), today()).filter((g) => !g.cell.coveredBy).length : 0;
+  const roleApproves = approverRoles(db).includes(me.role);
   const pendingForMe = [...db.overtime_requests, ...db.correction_requests, ...db.leave_requests].filter((r) => r.status === "pending" && canApprove(db, me, r.employee_id)).length;
 
   const groups: { title: string; items: NavItem[] }[] = canManage
@@ -48,12 +52,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     : [
         ...(canSchedule ? [{ title: "Operations", items: [
           { href: "/schedule", label: "Schedule", icon: "shift" as IconName, count: openGaps },
+          ...(roleApproves ? [{ href: "/approvals", label: "Approvals", icon: "check" as IconName, count: pendingForMe }] : []),
         ] }] : []),
         { title: "Me", items: [
           { href: "/my-time", label: "My time", icon: "clock" },
           { href: "/my-leave", label: "My leave", icon: "sun" },
           { href: "/my-pay", label: "My pay", icon: "wallet" },
-          ...(isManager ? [{ href: "/approvals", label: "Team approvals", icon: "check" as IconName, count: pendingForMe }] : []),
+          ...(isManager && !roleApproves ? [{ href: "/approvals", label: "Team approvals", icon: "check" as IconName, count: pendingForMe }] : []),
           ...(isManager && !canSchedule ? [{ href: "/schedule", label: "Team schedule", icon: "shift" as IconName }] : []),
         ] },
         { title: "Company", items: [
@@ -118,6 +123,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             <select value={me.id} onChange={(e) => switchUser(e.target.value)}>
               {PROTOTYPE_USERS.map((u) => <option key={u.id} value={u.id}>{u.label} ({u.sub})</option>)}
             </select>
+          </label>
+          <label className="toggle-row theme-toggle">
+            <input type="checkbox" checked={dark} onChange={(e) => setDark(e.target.checked)} />
+            <span>Dark mode</span>
           </label>
         </div>
       </aside>

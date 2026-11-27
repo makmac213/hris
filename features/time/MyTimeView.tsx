@@ -1,9 +1,10 @@
 "use client";
 
+import { approverText } from "@/lib/approvals";
 import { useState } from "react";
 import { today as todayIso, useCurrentUser, useDb, workDateFor } from "@/lib/store";
 import { cellFor, datesFrom, scheduleFor } from "@/lib/schedule";
-import { formatDate } from "@/lib/format";
+import { displayName, formatDate } from "@/lib/format";
 import { formatDuration, formatInstant, shiftHours, shiftKindLabel, summarizeDay } from "@/lib/time";
 import type { TimeRecord } from "@/lib/types";
 import { Button, EmptyState, Icon, Blank } from "@/components/ui";
@@ -186,7 +187,7 @@ export function MyTimeView() {
           managerial={!!db.compensation.find((c) => c.employee_id === me.id)?.is_managerial}
           initialDate={filing.date}
           onClose={() => setFiling(null)}
-          onDone={() => { setFiling(null); setFiledNote("Overtime request sent for approval."); }}
+          onDone={() => { setFiling(null); setFiledNote(`Overtime request sent to ${approverText(db, me.id, displayName)}.`); }}
         />
       )}
       {filing?.type === "fix" && (
@@ -196,7 +197,7 @@ export function MyTimeView() {
           initialDate={filing.date}
           initialKind={filing.kind}
           onClose={() => setFiling(null)}
-          onDone={() => { setFiling(null); setFiledNote("Correction request sent for approval."); }}
+          onDone={() => { setFiling(null); setFiledNote(`Correction request sent to ${approverText(db, me.id, displayName)}.`); }}
         />
       )}
 
