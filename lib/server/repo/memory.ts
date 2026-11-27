@@ -1,0 +1,65 @@
+// In-memory repository, seeded from the sample company. Used in development, tests and demos.
+// One instance per server process; a restart resets it, like the prototype.
+
+import { ORG_ID, seed } from "@/lib/mock-data";
+import type { Database, PayrollSettings } from "@/lib/types";
+import type { ApiKey, Repository, Row, StoredResponse, Table } from "./types";
+
+export class MemoryRepository implements Repository {
+  readonly kind = "memory" as const;
+  private db: Database;
+  private keys: ApiKey[] = [];
+  private idem = new Map<string, StoredResponse>();
+  private seq = 0;
+  /** Supabase auth user id → employee id. In memory, an employee's id doubles as their user id. */
+  constructor(initial: Database = seed) {
+    this.db = structuredClone(initial);
+  }
+
+  async snapshot(orgId: string): Promise<Database> {
+    if (orgId !== ORG_ID) throw new Error(`Unknown organization ${orgId}`);
+    return this.db;
+  }
+
+  async insert<T extends Table>(table: T, row: Row<T>): Promise<Row<T>> {
+    this.db = { ...this.db, [table]: [...(this.db[table] as Row<T>[]), row] };
+    return row;
+  }
+
+  async update<T extends Table>(table: T, key: keyof Row<T> & string, value: string, patch: Partial<Row<T>>): Promise<Row<T>[]> {
+    const changed: Row<T>[] = [];
+    const rows = (this.db[table] as Row<T>[]).map((r) => {
+      if ((r as unknown as Record<string, unknown>)[key] !== value) return r;
+      const next = { ...r, ...patch };
+      changed.push(next);
+      return next;
+    });
+    this.db = { ...this.db, [table]: rows };
+    return changed;
+  }
+
+  async updateSettings(_orgId: string, patch: Partial<PayrollSettings>) {
+    this.db = { ...this.db, payroll_settings: { ...this.db.payroll_settings, ...patch } };
+  }
+
+  newId(prefix: string) {
+    return `${prefix}-${Date.now().toString(36)}${(++this.seq).toString(36)}`;
+  }
+
+  async findEmployeeByUser(userId: string) {
+    const e = this.db.employees.find((x) => x.id === userId);
+    return e ? { employeeId: e.id, orgId: e.organization_id } : null;
+  }
+
+  addApiKey(key: ApiKey) { this.keys.push(key); }
+  async findApiKey(hash: string) { return this.keys.find((k) => k.hash === hash) ?? null; }
+  async touchApiKey(id: string, at: string) { this.keys = this.keys.map((k) => (k.id === id ? { ...k, last_used_at: at } : k)); }
+
+  async getIdempotent(scope: string, key: string) {
+    const hit = this.idem.get(`${scope}:${key}`);
+    if (!hit) return null;
+    if (Date.now() - Date.parse(hit.created_at) > 24 * 3600 * 1000) { this.idem.delete(`${scope}:${key}`); return null; }
+    return hit;
+  }
+  async putIdempotent(scope: string, key: string, res: StoredResponse) { this.idem.set(`${scope}:${key}`, res); }
+}

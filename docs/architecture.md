@@ -18,7 +18,9 @@ lib/mock-data.ts        Sample company: 38 fictional people, shifts, time record
 lib/store.ts            The data layer: every read and write goes through here
 lib/time.ts             Shift maths, Philippine default shifts, attendance rules, CSV parsing
 lib/payroll.ts          Payroll engine: rates, day calculation, payslip, contributions, tax
-supabase/migrations/    0001 employees, 0002 timekeeping, 0003 payroll
+app/api/v1/              REST API entry point (see api.md)
+lib/server/             Server-only: services, auth, repositories (memory, Supabase), API pipeline
+supabase/migrations/    0001 employees, 0002 timekeeping, 0003 payroll, 0004 leave and separation, 0005 API
 preview/, scripts/      Single-file preview build (same views, hash routing)
 tests/                  Engine tests (npm test: esbuild + node --test)
 docs/                   Planning and documentation
@@ -39,6 +41,10 @@ The payroll engine in `lib/payroll.ts` is pure: `computePayslip(db, employee, pe
 | Employee | My time, My pay, the directory and the org chart |
 
 In the prototype, the "view as" switcher stands in for sign-in.
+
+## API
+
+The REST API at `/api/v1` runs the same rules on the server through `lib/server/services`, over a repository that is either in memory or Supabase. The web screens still use the in-browser store; moving them to server actions over the same services is the next step. See [api.md](api.md).
 
 ## Moving to Supabase
 
