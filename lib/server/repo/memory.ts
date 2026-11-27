@@ -2,7 +2,7 @@
 // One instance per server process; a restart resets it, like the prototype.
 
 import { ORG_ID, seed } from "@/lib/mock-data";
-import type { Database, PayrollSettings } from "@/lib/types";
+import type { Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
 import type { ApiKey, Repository, Row, StoredResponse, Table } from "./types";
 
 export class MemoryRepository implements Repository {
@@ -36,6 +36,25 @@ export class MemoryRepository implements Repository {
     });
     this.db = { ...this.db, [table]: rows };
     return changed;
+  }
+
+  async upsert<T extends Table>(table: T, rows: Row<T>[]): Promise<Row<T>[]> {
+    const ids = new Set(rows.map((r) => (r as { id: string }).id));
+    this.db = { ...this.db, [table]: [...(this.db[table] as Row<T>[]).filter((r) => !ids.has((r as { id: string }).id)), ...rows] };
+    return rows;
+  }
+
+  async remove<T extends Table>(table: T, key: keyof Row<T> & string, values: string[]): Promise<number> {
+    const set = new Set(values);
+    const before = (this.db[table] as Row<T>[]).length;
+    const rows = (this.db[table] as Row<T>[]).filter((r) => !set.has((r as unknown as Record<string, string>)[key]));
+    this.db = { ...this.db, [table]: rows };
+    return before - rows.length;
+  }
+
+  async updateScheduleSettings(_orgId: string, patch: Partial<ScheduleSettings>) {
+    this.db = { ...this.db, schedule_settings: { ...this.db.schedule_settings, ...patch } };
+    return this.db.schedule_settings;
   }
 
   async updateSettings(_orgId: string, patch: Partial<PayrollSettings>) {

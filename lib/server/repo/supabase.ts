@@ -5,7 +5,8 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { DEFAULT_SETTINGS } from "@/lib/payroll";
-import type { Database, PayrollSettings } from "@/lib/types";
+import type { Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
+import { DEFAULT_SCHEDULE_SETTINGS } from "@/lib/schedule";
 import type { ApiKey, Repository, Row, StoredResponse, Table } from "./types";
 
 /** App table names that differ from the SQL schema. */
@@ -13,7 +14,7 @@ const SQL_NAME: Partial<Record<Table, string>> = { correction_requests: "time_co
 const sqlName = (t: Table) => SQL_NAME[t] ?? t;
 
 /** Tables with an organization_id column; the rest hang off an employee (or another org-scoped row). */
-const ORG_TABLES: Table[] = ["departments", "locations", "employees", "shift_codes", "time_records", "holidays", "payroll_periods", "pay_item_types", "leave_types"];
+const ORG_TABLES: Table[] = ["departments", "locations", "clients", "employees", "shift_codes", "time_records", "holidays", "payroll_periods", "pay_item_types", "leave_types", "shift_assignments", "notifications"];
 const EMPLOYEE_TABLES: Table[] = [
   "employment_events", "employee_documents", "onboarding_cases", "compensation", "overtime_requests", "correction_requests",
   "employee_payroll_settings", "pay_items", "leave_requests", "leave_adjustments", "payroll_openings",
@@ -62,6 +63,8 @@ export class SupabaseRepository implements Repository {
     }
     const { data: settings } = await this.sb.from("payroll_settings").select("*").eq("organization_id", orgId).maybeSingle();
     db.payroll_settings = { ...DEFAULT_SETTINGS, ...(settings ?? {}) } as PayrollSettings;
+    const { data: sched } = await this.sb.from("schedule_settings").select("horizon_days, short_notice_hours").eq("organization_id", orgId).maybeSingle();
+    db.schedule_settings = { ...DEFAULT_SCHEDULE_SETTINGS, ...(sched ?? {}) } as ScheduleSettings;
     return db;
   }
 
@@ -75,6 +78,26 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.sb.from(sqlName(table)).update(patch as never).eq(key as string, value).select();
     if (error) throw new Error(`${table}: ${error.message}`);
     return (data ?? []) as Row<T>[];
+  }
+
+  async upsert<T extends Table>(table: T, rows: Row<T>[]): Promise<Row<T>[]> {
+    if (!rows.length) return [];
+    const { data, error } = await this.sb.from(sqlName(table)).upsert(rows as never[]).select();
+    if (error) throw new Error(`${table}: ${error.message}`);
+    return (data ?? []) as Row<T>[];
+  }
+
+  async remove<T extends Table>(table: T, key: keyof Row<T> & string, values: string[]): Promise<number> {
+    if (!values.length) return 0;
+    const { count, error } = await this.sb.from(sqlName(table)).delete({ count: "exact" }).in(key as string, values);
+    if (error) throw new Error(`${table}: ${error.message}`);
+    return count ?? 0;
+  }
+
+  async updateScheduleSettings(orgId: string, patch: Partial<ScheduleSettings>) {
+    const { data, error } = await this.sb.from("schedule_settings").upsert({ organization_id: orgId, ...patch } as never).select("horizon_days, short_notice_hours").single();
+    if (error) throw new Error(`schedule_settings: ${error.message}`);
+    return { ...DEFAULT_SCHEDULE_SETTINGS, ...(data as Partial<ScheduleSettings>) };
   }
 
   async updateSettings(orgId: string, patch: Partial<PayrollSettings>) {

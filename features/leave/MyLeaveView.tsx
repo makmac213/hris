@@ -168,7 +168,7 @@ export function LeaveDialog({ employee, initialType, onClose, onDone }: { employ
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => { setF((p) => ({ ...p, [k]: v, ...(k === "start" && p.end < (v as string) ? { end: v as string } : {}) })); setErrors({}); };
   const t = types.find((x) => x.id === f.type)!;
-  const n = f.half ? 0.5 : requestDays(db, { start_date: f.start, end_date: f.end, half_day: false, leave_type_id: t.id });
+  const n = f.half ? 0.5 : requestDays(db, { start_date: f.start, end_date: f.end, half_day: false, leave_type_id: t.id, employee_id: employee.id });
   const year = Number(f.start.slice(0, 4));
   const b = leaveBalance(db, employee, t, year, f.start > today() ? f.start : today()); // credits earned by the first day
 

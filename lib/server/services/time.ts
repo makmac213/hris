@@ -1,25 +1,11 @@
 import { z } from "zod";
 import type { Database, Employee, TimeRecord } from "@/lib/types";
-import { zoned } from "@/lib/time";
+import { scheduleFor, workDateFor } from "@/lib/schedule";
 import { type Ctx, canSee, isPrivileged, requireScope, selfId } from "../context";
 import { conflict, forbidden, invalid, notFound } from "../errors";
 import { isoDate, isoInstant, listQuery, paginate, parse } from "../validate";
 
-/** Overnight shifts belong to the day they started: a 2 AM time out on a 10 PM shift counts for the day before. */
-export function workDateFor(db: Database, emp: Employee, iso: string): string {
-  const shift = db.shift_codes.find((s) => s.id === emp.shift_code_id);
-  const z0 = zoned(iso, shift?.timezone);
-  if (shift && shift.end_time <= shift.start_time) {
-    const [eh, em] = shift.end_time.split(":").map(Number);
-    if (z0.minutes < eh * 60 + em + 4 * 60) {
-      const d = new Date(`${z0.date}T00:00:00Z`);
-      d.setUTCDate(d.getUTCDate() - 1);
-      const prev = d.toISOString().slice(0, 10);
-      if (db.time_records.some((r) => r.employee_id === emp.id && r.work_date === prev)) return prev;
-    }
-  }
-  return z0.date;
-}
+export { workDateFor };
 
 export const ListTimeRecords = listQuery.extend({ employee_id: z.string().optional(), from: isoDate.optional(), to: isoDate.optional() });
 export async function listTimeRecords(ctx: Ctx, query: unknown) {
@@ -63,11 +49,12 @@ export async function createTimeRecord(ctx: Ctx, body: unknown) {
     throw conflict("Payroll for this date is finalized. File a correction or ask HR for an adjustment.");
   }
   const day = db.time_records.filter((r) => r.employee_id === emp.id && r.work_date === workDate && r.source === "device");
+  const shiftId = scheduleFor(db, emp, workDate).assignment?.shift_code_id ?? emp.shift_code_id;
   if (input.kind === "clock_in" && day.some((r) => r.kind === "clock_in")) throw conflict("There's already a time in for this day.");
   if (input.kind === "clock_out" && !day.some((r) => r.kind === "clock_in")) throw conflict("Record a time in first.");
   if (input.kind === "clock_out" && day.some((r) => r.kind === "clock_out")) throw conflict("There's already a time out for this day. File a correction to change it.");
   const rec: TimeRecord = {
-    id: ctx.repo.newId("tr"), organization_id: ctx.orgId, employee_id: emp.id, shift_code_id: emp.shift_code_id, kind: input.kind,
+    id: ctx.repo.newId("tr"), organization_id: ctx.orgId, employee_id: emp.id, shift_code_id: shiftId, kind: input.kind,
     recorded_at: at, work_date: workDate, source: "device", correction_request_id: null, photo_path: input.photo_path,
     latitude: input.latitude, longitude: input.longitude, accuracy_m: input.accuracy_m, device: input.device ?? (isKey ? `api-key:${ctx.principal.kind === "key" ? ctx.principal.key.prefix : ""}` : null),
   };

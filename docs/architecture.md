@@ -14,10 +14,11 @@ features/               One folder per module
 components/ui/          Design-system primitives
 components/AppShell.tsx Sidebar navigation, role-aware, responsive
 lib/types.ts            Row types that mirror the SQL schema
-lib/mock-data.ts        Sample company: 38 fictional people, shifts, time records, requests, pay
+lib/mock-data.ts        Sample company: 48 fictional people, three clients, shifts, a published schedule, requests, pay
 lib/store.ts            The data layer: every read and write goes through here
 lib/time.ts             Shift maths, Philippine default shifts, attendance rules, CSV parsing
 lib/payroll.ts          Payroll engine: rates, day calculation, payslip, contributions, tax
+lib/schedule.ts         Scheduling rules: each person's day, leave gaps, cover, notifications
 app/api/v1/              REST API entry point (see api.md)
 lib/server/             Server-only: services, auth, repositories (memory, Supabase), API pipeline
 supabase/migrations/    0001 employees, 0002 timekeeping, 0003 payroll, 0004 leave and separation, 0005 API

@@ -12,7 +12,8 @@ export type PhRegion = "NCR" | "CAR" | "I" | "II" | "III" | "IV-A" | "IV-B" | "V
 export type OnboardingPhase = "before_start" | "first_day" | "first_week" | "first_90_days";
 export type TaskOwnerRole = "people_team" | "it" | "manager" | "new_hire" | "buddy";
 export type OnboardingStatus = "in_progress" | "completed" | "cancelled";
-export type AppRole = "admin" | "hr" | "employee";
+// operations: schedules shifts for everyone (workforce management in a BPO); no pay or HR records.
+export type AppRole = "admin" | "hr" | "operations" | "employee";
 export type ShiftKind = "whole_day" | "half_day";
 export type ShiftSource = "system_default" | "uploaded" | "manual";
 export type TimeRecordKind = "clock_in" | "clock_out";
@@ -30,6 +31,7 @@ export interface Department {
   head_id: string | null;
 }
 
+/** A branch: an office or site people work from. "Remote" is a location too. */
 export interface Location {
   id: string;
   organization_id: string;
@@ -39,6 +41,16 @@ export interface Location {
   timezone: string;
   is_remote: boolean;
   ph_region: PhRegion | null; // for the regional minimum wage
+}
+
+/** A client account people are assigned to (BPO). */
+export interface Client {
+  id: string;
+  organization_id: string;
+  name: string;
+  code: string; // short label for the schedule, e.g. "NWM"
+  industry: string | null;
+  archived_at: string | null;
 }
 
 export interface Employee {
@@ -53,7 +65,8 @@ export interface Employee {
   phone: string | null;
   job_title: string;
   department_id: string | null;
-  location_id: string | null;
+  location_id: string | null; // branch
+  client_id: string | null; // client account (BPO); null for staff not on an account
   manager_id: string | null;
   employment_type: EmploymentType;
   status: EmploymentStatus;
@@ -362,6 +375,44 @@ export interface PayrollOpening {
   thirteenth_paid: number;
 }
 
+// ---- Scheduling ------------------------------------------------------------------------
+
+/**
+ * One person's shift on one date, set by operations. Days without a row follow the person's default
+ * shift code on weekdays and rest on weekends. shift_code_id null means a rest day.
+ */
+export interface ShiftAssignment {
+  id: string; // `${employee_id}:${work_date}`: one row per person per day
+  organization_id: string;
+  employee_id: string;
+  work_date: string;
+  shift_code_id: string | null;
+  covers_employee_id: string | null; // filling in for someone on leave that day
+  note: string | null;
+  assigned_by: string;
+  assigned_at: string;
+}
+
+export interface ScheduleSettings {
+  horizon_days: number; // how far ahead operations can schedule, counted from today
+  short_notice_hours: number; // leave filed less than this before the shift starts is flagged as short notice
+}
+
+export type NotificationKind = "leave_approved_on_shift" | "short_notice_leave";
+
+export interface AppNotification {
+  id: string;
+  organization_id: string;
+  recipient_id: string;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  link: string; // app path, e.g. /schedule?date=2026-12-02
+  employee_id: string | null; // who it is about
+  created_at: string;
+  read_at: string | null;
+}
+
 export interface Database {
   departments: Department[];
   locations: Location[];
@@ -386,4 +437,8 @@ export interface Database {
   leave_requests: LeaveRequest[];
   leave_adjustments: LeaveAdjustment[];
   payroll_openings: PayrollOpening[];
+  clients: Client[];
+  shift_assignments: ShiftAssignment[];
+  schedule_settings: ScheduleSettings;
+  notifications: AppNotification[];
 }

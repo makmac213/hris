@@ -51,3 +51,18 @@ export function deciderId(ctx: Ctx): string {
   if (ctx.principal.kind !== "user") throw forbidden("Decisions are made by a person, not an API key.");
   return ctx.principal.employee.id;
 }
+
+/** Admin, HR and operations schedule shifts; API keys with schedule:write too. */
+export function requireScheduler(ctx: Ctx) {
+  requireScope(ctx, "schedule:write");
+  if (ctx.principal.kind === "key") return;
+  if (!["admin", "hr", "operations"].includes(ctx.principal.role)) throw forbidden("Only operations, admin and HR can change the schedule.");
+}
+
+/** Who the caller can see on the schedule: everyone for schedulers and keys, their direct reports for managers, themselves. */
+export function scheduleScope(ctx: Ctx, db: Database): (employeeId: string) => boolean {
+  if (ctx.principal.kind === "key" || ["admin", "hr", "operations"].includes(ctx.principal.role)) return () => true;
+  const me = ctx.principal.employee.id;
+  const reports = new Set(db.employees.filter((e) => e.manager_id === me).map((e) => e.id));
+  return (id) => id === me || reports.has(id);
+}

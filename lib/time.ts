@@ -120,7 +120,7 @@ export interface DaySummary {
 }
 
 /** Records for one employee on one work date, summarized against their shift. */
-export function summarizeDay(records: TimeRecord[], shift: ShiftCode | undefined, date: string, nowIso: string, onLeave = false): DaySummary {
+export function summarizeDay(records: TimeRecord[], shift: ShiftCode | undefined, date: string, nowIso: string, onLeave = false, restDay = isWeekend(date)): DaySummary {
   const sorted = [...records].sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
   // An approved correction overrides the device record of the same kind; originals are never edited.
   const latestCorrection = (k: TimeRecord["kind"]) => [...sorted].reverse().find((r) => r.kind === k && r.source === "correction");
@@ -135,7 +135,7 @@ export function summarizeDay(records: TimeRecord[], shift: ShiftCode | undefined
   const now = Date.parse(nowIso);
 
   if (!clockIn) {
-    if (isWeekend(date)) return { ...base, status: "rest_day" };
+    if (restDay) return { ...base, status: "rest_day" };
     if (now < Date.parse(startIso)) return { ...base, status: "upcoming" };
     return { ...base, status: now > Date.parse(endIso) ? "absent" : "not_in" };
   }

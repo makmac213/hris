@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useCurrentUser, useDb, workDateFor } from "@/lib/store";
+import { today as todayIso, useCurrentUser, useDb, workDateFor } from "@/lib/store";
+import { cellFor, datesFrom, scheduleFor } from "@/lib/schedule";
 import { formatDate } from "@/lib/format";
 import { formatDuration, formatInstant, shiftHours, shiftKindLabel, summarizeDay } from "@/lib/time";
 import type { TimeRecord } from "@/lib/types";
@@ -38,15 +39,19 @@ export function MyTimeView() {
   const workDate = workDateFor(me, nowIso);
   const mine = db.time_records.filter((r) => r.employee_id === me.id);
   const todays = mine.filter((r) => r.work_date === workDate);
-  const today = summarizeDay(todays, shift, workDate, nowIso);
+  // The schedule decides today's shift and rest day; without one, the default shift on weekdays.
+  const dayOf = (d: string) => { const sc = scheduleFor(db, me, d); return { shift: sc.shift ?? shift, rest: sc.source === "scheduled" ? sc.rest : undefined }; };
+  const todayShift = dayOf(workDate);
+  const today = summarizeDay(todays, todayShift.shift, workDate, nowIso, false, todayShift.rest);
+  const upcoming = datesFrom(workDate, 7).map((d) => cellFor(db, me, d, todayIso()));
   const nextKind: TimeRecord["kind"] | null = !today.clockIn ? "clock_in" : !today.clockOut ? "clock_out" : null;
 
   const pastDates = Array.from(new Set(mine.map((r) => r.work_date))).filter((d) => d !== workDate).sort().reverse().slice(0, 6);
-  const history = pastDates.map((d) => ({ date: d, s: summarizeDay(mine.filter((r) => r.work_date === d), shift, d, nowIso) }));
+  const history = pastDates.map((d) => { const x = dayOf(d); return { date: d, s: summarizeDay(mine.filter((r) => r.work_date === d), x.shift, d, nowIso, false, x.rest) }; });
 
   const headline = (() => {
     if (today.status === "rest_day") return "Rest day. No shift today.";
-    if (today.status === "upcoming") return `Your shift starts at ${shiftHours(shift).split(" – ")[0]}.`;
+    if (today.status === "upcoming") return `Your shift starts at ${shiftHours(todayShift.shift ?? shift).split(" – ")[0]}.`;
     if (today.status === "not_in") return "You haven’t recorded your time in yet.";
     if (today.status === "working") return `Timed in at ${formatInstant(today.clockIn!.recorded_at, shift.timezone)}${today.lateMinutes ? `, ${formatDuration(today.lateMinutes)} late` : ""}.`;
     if (today.status === "missing_out") return "You didn’t record your time out. Record it now or tell HR.";
@@ -116,6 +121,26 @@ export function MyTimeView() {
             </li>
           )}
         </ol>
+      </section>
+
+      <section className="section">
+        <h2>Your next 7 days</h2>
+        <ol className="upcoming">
+          {upcoming.map((c) => {
+            const lv = c.leave;
+            const onLeave = lv?.status === "approved" && !lv.request.half_day;
+            return (
+              <li key={c.date}>
+                <span className="today-label">{new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${c.date}T00:00:00Z`))}</span>
+                <span className={`sc ${onLeave ? "sc-leave" : c.sched.working ? (c.sched.source === "scheduled" ? "sc-shift" : "sc-default") : "sc-rest"} ${lv?.status === "pending" ? "sc-pending" : ""}`}>
+                  <span className="sc-main num">{onLeave ? lv.type?.name ?? "Leave" : c.sched.working && c.sched.shift ? `${c.sched.shift.start_time}–${c.sched.shift.end_time}` : "Rest day"}</span>
+                  <span className="sc-sub">{lv?.status === "pending" ? "Leave pending" : !onLeave && c.sched.working && c.sched.shift ? c.sched.shift.code : ""}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+        <p className="muted small detail-note">Operations sets your schedule. Days they haven’t scheduled follow your usual shift.</p>
       </section>
 
       <section className="section">

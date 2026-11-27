@@ -35,6 +35,7 @@ Every request sends `Authorization: Bearer <token>`. There are two kinds of toke
   - `requests:read`
   - `payroll:read`, `payroll:write`
   - `leave:read`
+  - `schedule:read`, `schedule:write` (a workforce management tool)
 - **Keys are shown once** when created. Only the hash is stored, along with the first 12 characters for display.
 - **Development tokens:** in memory mode only, outside production, `Bearer dev:<employee_id>` signs in as that person. The app refuses to start with dev tokens when `NODE_ENV=production`.
 
@@ -44,6 +45,7 @@ These are the same rules as the web app:
 
 - Admin and HR can see and change everything in their organization.
 - A manager sees their direct reports and decides their requests.
+- Operations sees and changes everyone's schedule, and nothing about pay or HR records.
 - Everyone sees and files their own records.
 - Nobody approves their own request.
 - Pay is visible only to the person and to admin and HR, not to managers.
@@ -77,7 +79,7 @@ These are the same rules as the web app:
 | Method and path | What | Who |
 | --- | --- | --- |
 | `GET /me` | The signed-in person, role and permissions | Anyone |
-| `GET /employees` | Directory. Filters: `status`, `department_id`, `location_id`, `q` | Anyone (contact fields); admin and HR see everything |
+| `GET /employees` | Directory. Filters: `status`, `department_id`, `location_id`, `client_id`, `q` | Anyone (contact fields); admin and HR see everything |
 | `POST /employees` | Hire: creates the employee, onboarding, and probation terms in the Philippines | Admin, HR |
 | `GET /employees/{id}` | One person | Anyone; private fields for self, admin and HR |
 | `PATCH /employees/{id}` | Update job, manager, shift and employment terms | Admin, HR |
@@ -100,6 +102,9 @@ These are the same rules as the web app:
 | `POST /payroll-periods/{id}/finalize` | Lock the period. Refused while requests are pending or anyone is below minimum wage. | Admin, HR |
 | `GET /payslips` | Own payslips. Admin and HR can pass `employee_id`. Filter: `period_id` | Self, admin, HR |
 | `GET /year-end/{year}` | Annualization and 2316 figures for everyone | Admin, HR |
+| `GET`, `POST`, `PATCH`, `DELETE /departments`, `/branches`, `/clients` and `…/{id}/members` | Organization. See [scheduling.md](scheduling.md#api). | Read: anyone. Write: admin, HR |
+| `GET`, `PUT`, `DELETE /schedule`, `GET /schedule/gaps`, `GET`, `PATCH /schedule/settings` | The operations schedule. See [scheduling.md](scheduling.md#api). | Operations, admin, HR; managers read their team |
+| `GET /notifications`, `POST /notifications/read` | Your notifications | The person |
 | `GET /openapi.json` | The machine-readable spec | Anyone |
 
 ### Not in v1
@@ -139,7 +144,7 @@ The development tokens use the sample company's employee ids: `e04` is an admin,
 | `app/api/v1/[...path]/route.ts` | Next.js entry point, which hands every request to the pipeline |
 | `lib/server/http.ts` | The pipeline: auth, routing, JSON parsing, idempotency, errors and request ids |
 | `lib/server/routes.ts` | The route table; the OpenAPI spec is generated from it |
-| `lib/server/services/` | Employees, time, requests, payroll: permissions, validation and writes |
+| `lib/server/services/` | Employees, time, requests, payroll, organization, schedule: permissions, validation and writes |
 | `lib/server/auth.ts`, `context.ts` | Tokens, API keys, and the permission rules |
 | `lib/server/repo/` | `memory.ts`, `supabase.ts`, and the `Repository` interface |
 | `tests/api.test.ts` | Tests against the memory store |

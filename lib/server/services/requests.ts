@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { CorrectionRequest, Database, LeaveRequest, OvertimeRequest, TimeRecord } from "@/lib/types";
 import { localToIso, spanMinutes } from "@/lib/time";
 import { requestDays, validateLeave } from "@/lib/leave";
+import { leaveNotifications } from "@/lib/schedule";
 import { type Ctx, canDecide, canSee, deciderId, isPrivileged, requireScope, selfId } from "../context";
 import { conflict, forbidden, invalid, notFound } from "../errors";
 import { isoDate, isoInstant, listQuery, paginate, parse } from "../validate";
@@ -108,7 +109,11 @@ export async function fileLeave(ctx: Ctx, body: unknown) {
   if (isLocked(db, input.start_date)) errors.start_date = "Payroll for this date is finalized. Ask HR to handle it as an adjustment.";
   if (Object.keys(errors).length) throw invalid(errors);
   const row: LeaveRequest = { ...input, id: ctx.repo.newId("lv"), employee_id: me, status: "pending", filed_at: ctx.now, decided_by: null, decided_at: null, decision_note: null };
-  return { ...(await ctx.repo.insert("leave_requests", row)), days: requestDays(db, row) };
+  const saved = await ctx.repo.insert("leave_requests", row);
+  // Short notice on a scheduled shift: operations hears now, not only at approval.
+  const sent = leaveNotifications({ ...db, leave_requests: [...db.leave_requests, row] }, row, "filed", ctx.now.slice(0, 10), ctx.now, (p) => ctx.repo.newId(p), null);
+  if (sent.length) await ctx.repo.upsert("notifications", sent);
+  return { ...saved, days: requestDays(db, row), notified: sent.map((n) => n.recipient_id) };
 }
 
 export const Decision = z.object({ approve: z.boolean(), note: z.string().trim().nullable().optional() })
@@ -136,6 +141,13 @@ export async function decide(ctx: Ctx, kind: Kind, id: string, body: unknown) {
       source: "correction", correction_request_id: id, photo_path: null, latitude: null, longitude: null, accuracy_m: null, device: null,
     };
     await ctx.repo.insert("time_records", rec);
+  }
+  if (kind === "leave" && input.approve) {
+    // Approved leave on scheduled shifts: the shifts become coverage gaps; tell operations, the manager and the scheduler.
+    const lv = { ...(req as LeaveRequest), ...decided };
+    const sent = leaveNotifications({ ...db, leave_requests: db.leave_requests.map((r) => (r.id === id ? lv : r)) }, lv, "approved", ctx.now.slice(0, 10), ctx.now, (p) => ctx.repo.newId(p), by);
+    if (sent.length) await ctx.repo.upsert("notifications", sent);
+    return { ...row, notified: sent.map((n) => n.recipient_id) };
   }
   return row;
 }
