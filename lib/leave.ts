@@ -4,6 +4,7 @@ import type { Database, Employee, LeaveRequest, LeaveType } from "./types";
 import { addDays } from "./format";
 import { isWeekend } from "./time";
 import { monthsOfService } from "./employment";
+import { isScheduledWorkday } from "./schedule";
 
 export const SIL_ID = "lt-sil";
 
@@ -42,10 +43,11 @@ export const STATUTORY_LEAVES: LeaveType[] = [
   },
 ];
 
-export function workdaysBetween(db: Database, start: string, end: string): string[] {
+/** Workdays in a range: the person's scheduled shift days when given (rotating rest days), else Monday to Friday. Holidays don't count. */
+export function workdaysBetween(db: Database, start: string, end: string, employee?: Pick<Employee, "id" | "shift_code_id">): string[] {
   const out: string[] = [];
   for (let d = start; d <= end; d = addDays(d, 1)) {
-    if (isWeekend(d)) continue;
+    if (employee ? !isScheduledWorkday(db, employee, d) : isWeekend(d)) continue;
     const h = db.holidays.find((x) => x.date === d && x.kind !== "special_working");
     if (h) continue;
     out.push(d);
@@ -53,12 +55,14 @@ export function workdaysBetween(db: Database, start: string, end: string): strin
   return out;
 }
 
+const personOf = (db: Database, id: string | undefined) => (id ? db.employees.find((e) => e.id === id) : undefined);
+
 const calendarDays = (start: string, end: string) => Math.round((Date.parse(end) - Date.parse(start)) / 86400000) + 1;
 
-export function requestDays(db: Database, r: Pick<LeaveRequest, "start_date" | "end_date" | "half_day" | "leave_type_id">) {
+export function requestDays(db: Database, r: Pick<LeaveRequest, "start_date" | "end_date" | "half_day" | "leave_type_id"> & { employee_id?: string }) {
   if (r.half_day) return 0.5;
   const t = db.leave_types.find((x) => x.id === r.leave_type_id);
-  return t?.calendar_days ? calendarDays(r.start_date, r.end_date) : workdaysBetween(db, r.start_date, r.end_date).length;
+  return t?.calendar_days ? calendarDays(r.start_date, r.end_date) : workdaysBetween(db, r.start_date, r.end_date, personOf(db, r.employee_id)).length;
 }
 
 /** Leave types this person can see. SIL is hidden when a company leave of at least 5 paid days replaces it (Art. 95). */
@@ -146,7 +150,7 @@ export function leaveByDate(db: Database, employeeId: string): Map<string, { typ
     if (r.employee_id !== employeeId || r.status !== "approved") continue;
     const t = db.leave_types.find((x) => x.id === r.leave_type_id);
     if (!t) continue;
-    for (const d of workdaysBetween(db, r.start_date, r.end_date)) out.set(d, { type: t, paid: t.paid, half: r.half_day });
+    for (const d of workdaysBetween(db, r.start_date, r.end_date, personOf(db, employeeId))) out.set(d, { type: t, paid: t.paid, half: r.half_day });
   }
   return out;
 }
@@ -155,7 +159,7 @@ export function validateLeave(db: Database, e: Employee, t: LeaveType, start: st
   const errors: Record<string, string> = {};
   if (!start || !end || end < start) { errors.end = "The last day can’t be before the first."; return errors; }
   if (halfDay && start !== end) errors.end = "A half day is a single date.";
-  const days = halfDay ? 0.5 : t.calendar_days ? calendarDays(start, end) : workdaysBetween(db, start, end).length;
+  const days = halfDay ? 0.5 : t.calendar_days ? calendarDays(start, end) : workdaysBetween(db, start, end, e).length;
   if (days === 0) errors.end = "Those dates are all rest days or holidays.";
   const eligible = addMonths(e.start_date, t.min_service_months);
   if (start < eligible) errors.type = `${t.name} needs ${t.min_service_months} months of service. Available from ${eligible}.`;

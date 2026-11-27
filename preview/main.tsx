@@ -18,6 +18,8 @@ import { PayTypesView } from "@/features/payroll/PayTypesView";
 import { YearEndView } from "@/features/payroll/YearEndView";
 import { MyLeaveView } from "@/features/leave/MyLeaveView";
 import { LeavePoliciesView } from "@/features/leave/LeavePoliciesView";
+import { OrganizationView } from "@/features/org/OrganizationView";
+import { ScheduleView } from "@/features/schedule/ScheduleView";
 import { usePathname } from "./shims/navigation";
 
 function Routes() {
@@ -29,6 +31,8 @@ function Routes() {
   else if (parts[0] === "onboarding" && parts[1]) view = <OnboardingCaseView key={parts[1]} id={parts[1]} />;
   else if (parts[0] === "onboarding") view = <OnboardingListView />;
   else if (parts[0] === "org-chart") view = <OrgChartView />;
+  else if (parts[0] === "organization") view = <OrganizationView />;
+  else if (parts[0] === "schedule") view = <ScheduleView />;
   else if (parts[0] === "time" && parts[1] === "shift-codes") view = <ShiftCodesView />;
   else if (parts[0] === "time") view = <AttendanceView />;
   else if (parts[0] === "my-time") view = <MyTimeView />;

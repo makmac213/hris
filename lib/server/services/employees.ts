@@ -12,7 +12,7 @@ import { isoDate, listQuery, paginate, parse } from "../validate";
 
 const PUBLIC_FIELDS = [
   "id", "employee_number", "first_name", "last_name", "preferred_name", "pronouns", "work_email", "phone", "job_title",
-  "department_id", "location_id", "manager_id", "employment_type", "status", "start_date", "end_date", "avatar_url",
+  "department_id", "location_id", "client_id", "manager_id", "employment_type", "status", "start_date", "end_date", "avatar_url",
 ] as const;
 
 /** Directory fields for everyone; the full record for the person, admin and HR. */
@@ -45,6 +45,7 @@ export const ListEmployees = listQuery.extend({
   status: z.enum(["active", "onboarding", "on_leave", "offboarded"]).optional(),
   department_id: z.string().optional(),
   location_id: z.string().optional(),
+  client_id: z.string().optional(),
   q: z.string().optional(),
 });
 export async function listEmployees(ctx: Ctx, query: unknown) {
@@ -53,7 +54,7 @@ export async function listEmployees(ctx: Ctx, query: unknown) {
   const db = await ctx.repo.snapshot(ctx.orgId);
   const needle = q.q?.toLowerCase();
   const rows = db.employees.filter((e) =>
-    (!q.status || e.status === q.status) && (!q.department_id || e.department_id === q.department_id) && (!q.location_id || e.location_id === q.location_id) &&
+    (!q.status || e.status === q.status) && (!q.department_id || e.department_id === q.department_id) && (!q.location_id || e.location_id === q.location_id) && (!q.client_id || e.client_id === q.client_id) &&
     (!needle || `${e.first_name} ${e.last_name} ${e.preferred_name ?? ""} ${e.job_title} ${e.work_email}`.toLowerCase().includes(needle)));
   const page = paginate(rows, q);
   return { ...page, data: page.data.map((e) => employeeView(ctx, e)) };
@@ -72,7 +73,7 @@ export const CreateEmployee = z.object({
   first_name: z.string().trim().min(1), last_name: z.string().trim().min(1), work_email: z.string().email(),
   job_title: z.string().trim().min(1), department_id: z.string(), location_id: z.string(), manager_id: z.string().nullable().default(null),
   start_date: isoDate, employment_type: z.enum(["full_time", "part_time", "contractor", "intern"]).default("full_time"),
-  shift_code_id: z.string().nullable().optional(),
+  shift_code_id: z.string().nullable().optional(), client_id: z.string().nullable().default(null),
 });
 export async function createEmployee(ctx: Ctx, body: unknown) {
   requirePrivileged(ctx, "employees:write");
@@ -83,6 +84,7 @@ export async function createEmployee(ctx: Ctx, body: unknown) {
   const loc = db.locations.find((l) => l.id === input.location_id);
   if (!loc) throw invalid({ location_id: "Unknown location." });
   if (input.manager_id && !db.employees.some((e) => e.id === input.manager_id)) throw invalid({ manager_id: "Unknown manager." });
+  if (input.client_id && !db.clients.some((c) => c.id === input.client_id && !c.archived_at)) throw invalid({ client_id: "Unknown or archived client." });
   const n = db.employees.length + 1;
   const ph = !!loc.ph_region;
   const id = ctx.repo.newId("e");
@@ -102,7 +104,7 @@ export async function createEmployee(ctx: Ctx, body: unknown) {
 }
 
 export const UpdateEmployee = z.object({
-  job_title: z.string().trim().min(1), department_id: z.string(), location_id: z.string(), manager_id: z.string().nullable(),
+  job_title: z.string().trim().min(1), department_id: z.string(), location_id: z.string(), client_id: z.string().nullable(), manager_id: z.string().nullable(),
   shift_code_id: z.string().nullable(), phone: z.string().nullable(), preferred_name: z.string().nullable(), pronouns: z.string().nullable(),
   employment_status_ph: z.enum(["probationary", "regular", "project", "seasonal", "casual", "fixed_term"]),
   probation_end_date: isoDate.nullable(), standards_given_on: isoDate.nullable(), contract_end_date: isoDate.nullable(), birth_date: isoDate.nullable(),
@@ -114,6 +116,9 @@ export async function updateEmployee(ctx: Ctx, id: string, body: unknown) {
   const next = { ...e, ...patch };
   if (patch.manager_id === id) throw invalid({ manager_id: "Someone can't be their own manager." });
   if (patch.manager_id && !db.employees.some((x) => x.id === patch.manager_id)) throw invalid({ manager_id: "Unknown manager." });
+  if (patch.department_id && !db.departments.some((d) => d.id === patch.department_id)) throw invalid({ department_id: "Unknown department." });
+  if (patch.location_id && !db.locations.some((l) => l.id === patch.location_id)) throw invalid({ location_id: "Unknown branch." });
+  if (patch.client_id && !db.clients.some((c) => c.id === patch.client_id && !c.archived_at)) throw invalid({ client_id: "Unknown or archived client." });
   if (patch.shift_code_id && !db.shift_codes.some((s) => s.id === patch.shift_code_id && !s.archived_at)) throw invalid({ shift_code_id: "Unknown or archived shift code." });
   if (next.employment_status_ph === "probationary" && next.probation_end_date && next.probation_end_date > probationEndFor(e.start_date)) {
     throw invalid({ probation_end_date: `Probation can't run past ${probationEndFor(e.start_date)}, ${PROBATION_MAX_DAYS} days from the start (Art. 296).` });

@@ -11,6 +11,8 @@ export function toHash(href: string): string {
   if (parts[0] === "time" && parts[1] === "shift-codes") return "#shift-codes";
   if (parts[0] === "payroll" && parts[1] === "pay-types") return "#pay-types";
   if (parts[0] === "payroll" && parts[1] === "year-end") return "#year-end";
+  const date = new URLSearchParams(query).get("date");
+  if (parts[0] === "schedule" && date) return `#schedule-${date}`;
   return `#${parts[0] ?? "employees"}`;
 }
 
@@ -23,6 +25,7 @@ export function fromHash(hash: string): { path: string; query: string } {
   if (h === "shift-codes") return { path: "/time/shift-codes", query: "" };
   if (h === "pay-types") return { path: "/payroll/pay-types", query: "" };
   if (h === "year-end") return { path: "/payroll/year-end", query: "" };
+  if ((m = h.match(/^schedule-(\d{4}-\d{2}-\d{2})$/))) return { path: "/schedule", query: `date=${m[1]}` };
   return { path: `/${h}`, query: "" };
 }
 

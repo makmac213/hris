@@ -1,15 +1,15 @@
 // Storage boundary. Services only talk to a Repository, so the same rules run on the in-memory store
 // (development, tests) and on Supabase (production).
 
-import type { Database, PayrollSettings } from "@/lib/types";
+import type { ApprovalSettings, Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
 
-/** Tables that hold rows. `payroll_settings` is one object per organization and has its own method. */
+/** Tables that hold rows. `payroll_settings`, `schedule_settings` and `approval_settings` are one object per organization, with their own methods. */
 export type Table = { [K in keyof Database]: Database[K] extends unknown[] ? K : never }[keyof Database];
 export type Row<T extends Table> = Database[T][number];
 
 export type ApiScope =
   | "employees:read" | "employees:write" | "time:write" | "requests:read" | "requests:write"
-  | "payroll:read" | "payroll:write" | "leave:read";
+  | "payroll:read" | "payroll:write" | "leave:read" | "schedule:read" | "schedule:write";
 
 export interface ApiKey {
   id: string;
@@ -33,7 +33,13 @@ export interface Repository {
   insert<T extends Table>(table: T, row: Row<T>): Promise<Row<T>>;
   /** Updates rows whose `key` column equals `value`. Returns the updated rows. */
   update<T extends Table>(table: T, key: keyof Row<T> & string, value: string, patch: Partial<Row<T>>): Promise<Row<T>[]>;
+  /** Inserts rows, replacing any with the same id. */
+  upsert<T extends Table>(table: T, rows: Row<T>[]): Promise<Row<T>[]>;
+  /** Deletes rows whose `key` column is one of `values`. Returns how many went. */
+  remove<T extends Table>(table: T, key: keyof Row<T> & string, values: string[]): Promise<number>;
   updateSettings(orgId: string, patch: Partial<PayrollSettings>): Promise<void>;
+  updateScheduleSettings(orgId: string, patch: Partial<ScheduleSettings>): Promise<ScheduleSettings>;
+  updateApprovalSettings(orgId: string, patch: Partial<ApprovalSettings>): Promise<ApprovalSettings>;
   newId(prefix: string): string;
 
   findEmployeeByUser(userId: string): Promise<{ employeeId: string; orgId: string } | null>;

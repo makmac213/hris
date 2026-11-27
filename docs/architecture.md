@@ -14,10 +14,11 @@ features/               One folder per module
 components/ui/          Design-system primitives
 components/AppShell.tsx Sidebar navigation, role-aware, responsive
 lib/types.ts            Row types that mirror the SQL schema
-lib/mock-data.ts        Sample company: 38 fictional people, shifts, time records, requests, pay
+lib/mock-data.ts        Sample company: 48 fictional people, three clients, shifts, a published schedule, requests, pay
 lib/store.ts            The data layer: every read and write goes through here
 lib/time.ts             Shift maths, Philippine default shifts, attendance rules, CSV parsing
 lib/payroll.ts          Payroll engine: rates, day calculation, payslip, contributions, tax
+lib/schedule.ts         Scheduling rules: each person's day, leave gaps, cover, notifications
 app/api/v1/              REST API entry point (see api.md)
 lib/server/             Server-only: services, auth, repositories (memory, Supabase), API pipeline
 supabase/migrations/    0001 employees, 0002 timekeeping, 0003 payroll, 0004 leave and separation, 0005 API
@@ -28,7 +29,7 @@ docs/                   Planning and documentation
 
 ## Data layer
 
-`lib/store.ts` keeps the database in memory and exposes it through `useSyncExternalStore`. Views call `useDb()` to read and named functions to write: `createEmployee`, `updateEmployee`, `assignShift`, `recordTime`, `fileOvertime`, `fileCorrection`, `decideRequest`, `finalizePayroll` and so on. Permissions live there too (`canApprove`: admin and HR approve anyone, a manager approves their direct reports, nobody approves their own).
+`lib/store.ts` keeps the database in memory and exposes it through `useSyncExternalStore`. Views call `useDb()` to read and named functions to write: `createEmployee`, `updateEmployee`, `assignShift`, `recordTime`, `fileOvertime`, `fileCorrection`, `decideRequest`, `finalizePayroll` and so on. Permissions live there too. `canApprove` comes from `lib/approvals.ts`: the direct supervisor, or an approver role (admin always, HR and operations if turned on), never one's own ([approvals.md](approvals.md)).
 
 The payroll engine in `lib/payroll.ts` is pure: `computePayslip(db, employee, period, now)` reads rows and returns a payslip. In production it runs on the server (an Edge Function or server action) and its result is frozen into `payroll_items` when a period is finalized.
 
@@ -37,7 +38,8 @@ The payroll engine in `lib/payroll.ts` is pure: `computePayslip(db, employee, pe
 | Role | Sees |
 | --- | --- |
 | Admin, HR | Everything: people, attendance, approvals, payroll, shift codes, plus their own time and pay |
-| Manager (anyone with reports) | Their own time and pay, and approvals for their team |
+| Manager (anyone with reports) | Their own time and pay, and approvals for their direct reports |
+| Approver roles | HR by default, operations if turned on: approvals for everyone ([approvals.md](approvals.md)) |
 | Employee | My time, My pay, the directory and the org chart |
 
 In the prototype, the "view as" switcher stands in for sign-in.

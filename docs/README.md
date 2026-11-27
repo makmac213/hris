@@ -15,6 +15,8 @@ All planning and documentation for the project lives here. Start with the roadma
 | [Employment terms](employment-rules.md) | Probationary, regular, project, seasonal, casual and fixed-term rules, and separation reasons |
 | [Final pay](final-pay.md) | What's in final pay, separation and retirement pay, tax, notice and timing |
 | [Year-end tax](year-end-tax.md) | Annualization, BIR 2316, 1601-C, 1604-C and substituted filing |
+| [Who approves requests](approvals.md) | Direct supervisor plus approver roles, for leave, overtime and corrections |
+| [Organization and scheduling](scheduling.md) | Departments, branches, clients; the operations schedule, leave gaps, cover and notifications |
 
 Modules:
 
@@ -24,5 +26,7 @@ Modules:
 | [Timekeeping](modules/timekeeping.md) | Built (PR #1) |
 | [Payroll, overtime and corrections](modules/payroll.md) | Built (PR #2) |
 | [Leave, employment terms, final pay and year-end tax](modules/leave-and-separation.md) | Built (PR #2) |
+| [REST API](api.md) | Built (PR #3) |
+| [Organization and scheduling](scheduling.md) | Built (`feature/scheduling`) |
 
 Write new planning docs here too: one file per topic, linked from this page.

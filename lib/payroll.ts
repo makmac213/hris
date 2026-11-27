@@ -7,6 +7,7 @@ import { isWeekend, localToIso, spanMinutes, zoned } from "./time";
 import { convertibleDays, leaveByDate, SIL_ID } from "./leave";
 import { annualTax, isLastPeriodOfYear, yearToDate } from "./yearend";
 import { wageFor } from "./regions";
+import { isScheduledWorkday, scheduleFor } from "./schedule";
 
 export const RULES = {
   minimumWage: { region: "NCR", daily: 755, effective: "2026-09-26", source: "Wage Order No. NCR-28" },
@@ -256,6 +257,8 @@ export interface DayContext {
   prevWorkdayPresent: boolean;
   nowMs: number;
   managerial: boolean;
+  /** The person's rest day per the schedule. Defaults to weekends when there's no schedule. */
+  rest?: boolean;
 }
 
 export function computeDay(
@@ -267,7 +270,7 @@ export function computeDay(
   ctx: DayContext,
 ): DayCalc {
   const tz = shift?.timezone ?? "Asia/Manila";
-  const rest = isWeekend(date);
+  const rest = ctx.rest ?? isWeekend(date);
   const holiday = ctx.holidayOn(date);
   const type = dayTypeOf(holiday, rest);
   const { clockIn, clockOut } = effectiveInOut(records);
@@ -564,7 +567,7 @@ function presentOnLastWorkday(db: Database, employee: Employee, shift: ShiftCode
   const leave = leaveByDate(db, employee.id);
   for (let d = addDays(date, -1), i = 0; i < 14; d = addDays(d, -1), i++) {
     if (d < employee.start_date) return true; // no workday before: not held against a new joiner
-    if (isWeekend(d)) continue;
+    if (!isScheduledWorkday(db, employee, d)) continue;
     const h = db.holidays.find((x) => x.date === d && x.kind !== "special_working");
     const worked = db.time_records.some((r) => r.employee_id === employee.id && r.work_date === d && r.kind === "clock_in");
     if (h) { if (worked) return true; continue; } // successive holidays: working the earlier one counts
@@ -601,11 +604,13 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
   for (const d of datesIn(period)) {
     if (d < employee.start_date || (employee.end_date && d > employee.end_date)) continue;
     const dayRecs = recs.filter((r) => r.work_date === d);
+    // The day's shift and rest day come from the schedule (rotating rest days, a different shift for a day).
+    const sched = scheduleFor(db, employee, d);
     const day = computeDay(
-      d, shift, dayRecs,
+      d, sched.shift ?? shift, dayRecs,
       ot.filter((r) => r.work_date === d && r.status === "approved"),
       ot.filter((r) => r.work_date === d && r.status === "pending"),
-      { holidayOn, leaveOn, prevWorkdayPresent: prevPresent, nowMs, managerial },
+      { holidayOn, leaveOn, prevWorkdayPresent: prevPresent, nowMs, managerial, rest: sched.source === "scheduled" ? sched.rest : undefined },
     );
     days.push(day);
     const worked = dayRecs.some((r) => r.kind === "clock_in") || !!leaves.get(d)?.paid;

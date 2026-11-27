@@ -3,6 +3,7 @@
 import { displayName, formatDate } from "@/lib/format";
 import { formatDuration } from "@/lib/time";
 import { peso, type DayCalc, type Payslip as PayslipData } from "@/lib/payroll";
+import { Blank } from "@/components/ui";
 
 const dayTypeLabel: Record<DayCalc["type"], string> = {
   ordinary: "", rest: "Rest day", regular: "Regular holiday", special: "Special day", regular_rest: "Regular holiday, rest day", special_rest: "Special day, rest day",
@@ -92,7 +93,7 @@ export function Payslip({ slip, showEmployer }: { slip: PayslipData; showEmploye
                     d.holidayPaidUnworked && "Paid holiday",
                     d.specialUnworked && (slip.settings.pay_unworked_special_days ? "Special day off, paid by policy" : "Special day off, unpaid"),
                     d.type === "regular" && !d.holidayPaidUnworked && !d.workedMin && !d.future && !slip.comp.is_managerial && "Holiday unpaid: absent the workday before",
-                  ].filter(Boolean).join(" · ") || <span className="muted">—</span>}
+                  ].filter(Boolean).join(" · ") || <Blank />}
                 </td>
               </tr>
             ))}

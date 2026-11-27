@@ -26,12 +26,17 @@ import type {
   LeaveRequest,
   LeaveAdjustment,
   PayrollOpening,
+  Client,
+  ShiftAssignment,
+  AppNotification,
 } from "./types";
 import { DEFAULT_SETTINGS, monthlyContributions, periodFor, withholdingSemiMonthly } from "./payroll";
 import { addDays } from "./format";
 import { probationEndFor } from "./employment";
 import { STATUTORY_LEAVES } from "./leave";
 import { isWeekend, localToIso, phDefaultCodes, spanMinutes, zoned } from "./time";
+import { DEFAULT_APPROVAL_SETTINGS } from "./approvals";
+import { assignmentId, DEFAULT_SCHEDULE_SETTINGS, leaveNotifications } from "./schedule";
 
 // Sample company for the prototype. All people are fictional.
 export const ORG_ID = "org-halden";
@@ -48,8 +53,10 @@ const departments: Department[] = [
   ["dep-sales", "Sales", "e11"],
   ["dep-cs", "Customer Success", "e28"],
   ["dep-marketing", "Marketing", "e31"],
+  ["dep-ops", "Client Operations", "e39"],
 ].map(([id, name, head]) => ({ id, organization_id: ORG_ID, name, head_id: head }));
 
+// Branches. Client Operations runs from Manila and Cebu.
 const locations: Location[] = [
   { id: "loc-mnl", organization_id: ORG_ID, name: "Manila", city: "Makati", country_code: "PH", timezone: "Asia/Manila", is_remote: false, ph_region: "NCR" },
   { id: "loc-ceb", organization_id: ORG_ID, name: "Cebu", city: "Cebu City", country_code: "PH", timezone: "Asia/Manila", is_remote: false, ph_region: "VII" },
@@ -105,9 +112,33 @@ const rows: Row[] = [
   ["e37", "Kat", "Gonzales", "Payroll Analyst", "dep-finance", "loc-mnl", "e24", "2026-11-03", "onboarding", "full_time", "she/her"],
   // Former
   ["e38", "Victor", "Hale", "Account Executive", "dep-sales", "loc-sfo", "e11", "2022-04-04", "offboarded"],
+  // Client Operations (BPO): agents on client accounts in Manila and Cebu
+  ["e39", "Rowena", "Garcia", "Head of Client Operations", "dep-ops", "loc-mnl", "e01", "2021-07-05", "active", "full_time", "she/her"],
+  ["e40", "Jerome", "Tolentino", "Workforce Scheduler", "dep-ops", "loc-mnl", "e39", "2022-09-19", "active", "full_time", "he/him"],
+  ["e41", "Angelica", "Santiago", "Team Lead, Northwind Mobile", "dep-ops", "loc-mnl", "e39", "2022-02-07"],
+  ["e42", "Kristine", "Dizon", "Customer Service Representative", "dep-ops", "loc-mnl", "e41", "2024-03-11"],
+  ["e43", "Paul", "Ignacio", "Customer Service Representative", "dep-ops", "loc-mnl", "e41", "2024-08-05"],
+  ["e44", "Joanna", "Lopez", "Patient Support Representative", "dep-ops", "loc-ceb", "e45", "2023-11-13"],
+  ["e45", "Ramon", "Villareal", "Team Lead, Kestrel Bank and Bluefin Health", "dep-ops", "loc-ceb", "e39", "2022-06-20"],
+  ["e46", "Cherry Mae", "Uy", "Banking Support Representative", "dep-ops", "loc-ceb", "e45", "2024-01-22"],
+  ["e47", "Liza", "Manalo", "Patient Support Representative", "dep-ops", "loc-mnl", "e41", "2025-02-03"],
+  ["e48", "Noel", "Pascual", "Technical Support Representative", "dep-ops", "loc-ceb", "e45", "2025-04-14"],
 ];
 
-const ROLES: Record<string, AppRole> = { e04: "admin", e10: "hr", e22: "hr" };
+// Client accounts (fictional). People not on an account have no client.
+const clients: Client[] = [
+  { id: "cl-northwind", organization_id: ORG_ID, name: "Northwind Mobile", code: "NWM", industry: "Telecommunications", archived_at: null },
+  { id: "cl-bluefin", organization_id: ORG_ID, name: "Bluefin Health", code: "BFH", industry: "Healthcare", archived_at: null },
+  { id: "cl-kestrel", organization_id: ORG_ID, name: "Kestrel Bank", code: "KSB", industry: "Banking", archived_at: null },
+];
+const CLIENT_OF: Record<string, string> = {
+  e41: "cl-northwind", e42: "cl-northwind", e43: "cl-northwind",
+  e44: "cl-bluefin", e47: "cl-bluefin",
+  e45: "cl-kestrel", e46: "cl-kestrel", e48: "cl-kestrel",
+  e29: "cl-northwind", // Customer Success manager for the account
+};
+
+const ROLES: Record<string, AppRole> = { e04: "admin", e10: "hr", e22: "hr", e39: "operations", e40: "operations" };
 
 // ---- Shift codes -------------------------------------------------------------
 // The nine Philippine defaults, plus two codes an admin uploaded for the Singapore and Sydney offices.
@@ -122,6 +153,9 @@ const SHIFT_ASSIGNMENTS: Record<string, string> = {
   e02: "sc-ph-d0900", e04: "sc-ph-d0800", e08: "sc-ph-d0900", e10: "sc-ph-d0800", e13: "sc-ph-d1000",
   e16: "sc-ph-d1000", e19: "sc-ph-d0900", e21: "sc-ph-d0800", e22: "sc-ph-d0800", e25: "sc-ph-h0800",
   e29: "sc-ph-d2200", e32: "sc-ph-d0900", e34: "sc-ph-d0900", e37: "sc-ph-d0800",
+  // Client Operations: US accounts on the night shift, Kestrel Bank in the morning
+  e39: "sc-ph-d0900", e40: "sc-ph-d0900", e41: "sc-ph-d2200", e42: "sc-ph-d2200", e43: "sc-ph-d2200", e47: "sc-ph-d2200",
+  e44: "sc-ph-d0700", e45: "sc-ph-d0700", e46: "sc-ph-d0700", e48: "sc-ph-d0700",
   // Singapore
   e03: "sc-sg-d0900", e06: "sc-sg-d0900", e12: "sc-sg-d0900", e23: "sc-sg-d0900", e27: "sc-sg-d0900",
   // Sydney
@@ -157,6 +191,7 @@ const employees: Employee[] = rows.map(([id, first, last, title, dep, loc, manag
   job_title: title,
   department_id: dep,
   location_id: loc,
+  client_id: CLIENT_OF[id] ?? null,
   manager_id: manager,
   employment_type: type,
   status,
@@ -282,6 +317,8 @@ const COMP: Record<string, [basis: "monthly" | "hourly", rate: number, manageria
   e13: ["monthly", 70000], e16: ["monthly", 68000], e19: ["monthly", 85000], e21: ["monthly", 60000],
   e22: ["monthly", 52000], e25: ["hourly", 150], e29: ["monthly", 45000], e32: ["monthly", 58000],
   e34: ["monthly", 72000], e37: ["monthly", 32000],
+  e39: ["monthly", 150000, true], e40: ["monthly", 45000], e41: ["monthly", 38000], e42: ["monthly", 24000], e43: ["monthly", 23000],
+  e44: ["monthly", 22000], e45: ["monthly", 36000], e46: ["monthly", 21000], e47: ["monthly", 23500], e48: ["monthly", 25000],
 };
 const compensation: Compensation[] = Object.entries(COMP).map(([id, [basis, rate, managerial]]) => ({
   id: `comp-${id}`, employee_id: id, pay_basis: basis, rate, is_managerial: !!managerial, on_ph_payroll: true,
@@ -487,6 +524,7 @@ const leave_types: LeaveType[] = [
   L("lt-sl", "Sick leave", { days: 15, accrual: "monthly", min_service_months: 6, requires_document: "Medical certificate for two or more days in a row", who: "Everyone after six months" }),
   L("lt-bereave", "Bereavement leave", { days: 3, accrual: "per_event", requires_document: "Death certificate", who: "Death of a spouse, child, parent or sibling" }),
   L("lt-birthday", "Birthday leave", { days: 1, who: "Everyone, in their birthday month" }),
+  L("lt-emergency", "Emergency leave", { days: 3, who: "Everyone", description: "For things that can’t wait: a sick child, an accident, damage at home. File it as soon as you can, even on the day." }),
   L("lt-lwop", "Leave without pay", { days: 30, accrual: "per_event", paid: false, who: "Anyone, with manager approval", description: "Not paid, and not counted toward the 13th month." }),
   ...STATUTORY_LEAVES.map((t) => t.id === "lt-paternity" ? { ...t, days: 10, description: "Halden gives 10 days, 3 more than the law." } : t),
 ];
@@ -505,6 +543,11 @@ const leave_requests: LeaveRequest[] = [
   LR("lv-7", "e16", "lt-vl", "2026-12-21", "2026-12-23", "pending", "Christmas in Ilocos"),
   LR("lv-8", "e13", "lt-vl", "2026-12-28", "2026-12-29", "pending", "Year-end break"),
   LR("lv-9", "e21", "lt-bereave", addDays(TODAY_LOCAL, 3), addDays(TODAY_LOCAL, 5), "pending", "My grandmother’s wake and burial in Iloilo"),
+  // Client Operations: leave landing on the published schedule
+  LR("lv-10", "e43", "lt-sl", TODAY_LOCAL, TODAY_LOCAL, "approved", "Fever since last night", { filed_at: at(TODAY_LOCAL, "06:40"), decided_by: "e41", decided_at: at(TODAY_LOCAL, "07:15") }),
+  LR("lv-11", "e44", "lt-vl", addDays(TODAY_LOCAL, 6), addDays(TODAY_LOCAL, 7), "pending", "Sister’s wedding in Dumaguete", { filed_at: at(addDays(TODAY_LOCAL, -1), "14:00") }),
+  LR("lv-12", "e46", "lt-vl", addDays(TODAY_LOCAL, 11), addDays(TODAY_LOCAL, 12), "approved", "Renewing my passport in Manila", { filed_at: at(addDays(TODAY_LOCAL, -14), "10:00"), decided_by: "e45", decided_at: at(addDays(TODAY_LOCAL, -13), "09:00") }),
+  LR("lv-13", "e42", "lt-emergency", TODAY_LOCAL, TODAY_LOCAL, "pending", "My son was admitted to the hospital", { filed_at: at(TODAY_LOCAL, "11:30") }),
 ];
 
 const leave_adjustments: LeaveAdjustment[] = [
@@ -527,6 +570,30 @@ const payroll_openings: PayrollOpening[] = compensation.filter((c) => c.employee
     basic_pay: basic, thirteenth_paid: 0,
   };
 });
+
+// ---- Published schedule --------------------------------------------------------------
+// Operations has published the next three weeks for Client Operations. Accounts keep their own rest days:
+// Bluefin Health works Sunday to Thursday, Kestrel Bank Tuesday to Saturday, Northwind Mobile weekdays.
+
+const REST_DAYS: Record<string, number[]> = {
+  "cl-northwind": [0, 6], "cl-bluefin": [5, 6], "cl-kestrel": [0, 1],
+};
+const schedule_settings = { ...DEFAULT_SCHEDULE_SETTINGS };
+const shift_assignments: ShiftAssignment[] = [];
+for (const e of employees.filter((x) => x.department_id === "dep-ops" && x.client_id)) {
+  const rest = REST_DAYS[e.client_id!];
+  for (let i = 0; i < 21; i++) {
+    const d = addDays(TODAY_LOCAL, i);
+    // Ops can't schedule over approved leave, so those days were left alone.
+    if (leave_requests.some((r) => r.employee_id === e.id && r.status === "approved" && r.start_date <= d && r.end_date >= d && r.filed_at < at(addDays(TODAY_LOCAL, -7), "09:00"))) continue;
+    const wd = new Date(`${d}T00:00:00Z`).getUTCDay();
+    shift_assignments.push({
+      id: assignmentId(e.id, d), organization_id: ORG_ID, employee_id: e.id, work_date: d,
+      shift_code_id: rest.includes(wd) ? null : e.shift_code_id, covers_employee_id: null, note: null,
+      assigned_by: "e40", assigned_at: at(addDays(TODAY_LOCAL, -7), "15:00"),
+    });
+  }
+}
 
 export const seed: Database = {
   departments,
@@ -552,4 +619,21 @@ export const seed: Database = {
   leave_requests,
   leave_adjustments,
   payroll_openings,
+  clients,
+  shift_assignments,
+  schedule_settings,
+  approval_settings: { ...DEFAULT_APPROVAL_SETTINGS },
+  notifications: [] as AppNotification[],
 };
+
+// Notifications that would have gone out: Paul's sick leave approved this morning, Liza's emergency leave filed today.
+{
+  let n = 0;
+  const id = (p: string) => `${p}-seed-${++n}`;
+  const lv10 = leave_requests.find((r) => r.id === "lv-10")!;
+  const lv13 = leave_requests.find((r) => r.id === "lv-13")!;
+  seed.notifications = [
+    ...leaveNotifications(seed, lv13, "filed", TODAY_LOCAL, lv13.filed_at, id, null),
+    ...leaveNotifications(seed, lv10, "approved", TODAY_LOCAL, lv10.decided_at!, id, lv10.decided_by),
+  ];
+}

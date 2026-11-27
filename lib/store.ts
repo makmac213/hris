@@ -5,8 +5,8 @@
 // (and React Query / server actions) without touching the views.
 
 import { useSyncExternalStore } from "react";
-import type { LeaveAdjustment, LeaveRequest, LeaveType, SeparationReason, AppRole, Compensation, CorrectionKind, CorrectionRequest, Database, Employee, EmployeePayrollSettings, OnboardingCase, OnboardingTask, OvertimeRequest, PayItem, PayItemType, PayrollSettings, ShiftCode, TimeRecord } from "./types";
-import { zoned } from "./time";
+import type { ApprovalSettings, Client, Department, Location, ScheduleSettings, LeaveAdjustment, LeaveRequest, LeaveType, SeparationReason, AppRole, Compensation, CorrectionKind, CorrectionRequest, Database, Employee, EmployeePayrollSettings, OnboardingCase, OnboardingTask, OvertimeRequest, PayItem, PayItemType, PayrollSettings, ShiftCode, TimeRecord } from "./types";
+import { type AssignmentInput, assignmentId, checkAssignments, leaveNotifications, lockReason, scheduleFor, toAssignments, workDateFor as workDateForDb } from "./schedule";
 import { buildOnboardingTasks, ORG_ID, seed, TEMPLATE_ID, TODAY } from "./mock-data";
 import { probationEndFor } from "./employment";
 
@@ -38,7 +38,10 @@ export function setCurrentUser(id: string) {
   currentUserId = id;
   sessionListeners.forEach((l) => l());
 }
-export function useCurrentUser(): { employee: Employee; role: AppRole; canManage: boolean } {
+/** Admin, HR and operations schedule shifts for anyone. */
+export const canSchedule = (e: Pick<Employee, "role">) => e.role === "admin" || e.role === "hr" || e.role === "operations";
+
+export function useCurrentUser(): { employee: Employee; role: AppRole; canManage: boolean; canSchedule: boolean } {
   const id = useSyncExternalStore(
     (l) => { sessionListeners.add(l); return () => sessionListeners.delete(l); },
     () => currentUserId,
@@ -46,12 +49,14 @@ export function useCurrentUser(): { employee: Employee; role: AppRole; canManage
   );
   const d = useDb();
   const employee = d.employees.find((e) => e.id === id)!;
-  return { employee, role: employee.role, canManage: employee.role === "admin" || employee.role === "hr" };
+  return { employee, role: employee.role, canManage: employee.role === "admin" || employee.role === "hr", canSchedule: canSchedule(employee) };
 }
 
 export const PROTOTYPE_USERS = [
   { id: "e04", label: "Marisol Dela Cruz", sub: "Admin" },
   { id: "e10", label: "Leah Santos", sub: "HR" },
+  { id: "e40", label: "Jerome Tolentino", sub: "Operations" },
+  { id: "e41", label: "Angelica Santiago", sub: "Team lead" },
   { id: "e06", label: "Priya Raman", sub: "Manager" },
   { id: "e16", label: "Miguel Ramos", sub: "Employee" },
   { id: "e25", label: "Paolo Mendoza", sub: "Employee, half-day" },
@@ -114,6 +119,7 @@ export interface NewEmployeeInput {
   manager_id: string | null;
   start_date: string;
   employment_type: Employee["employment_type"];
+  client_id?: string | null;
 }
 
 /** New hires in a Philippine office start on probation. Standards must be given in writing on day one (Art. 296). */
@@ -130,6 +136,7 @@ export function createEmployee(input: NewEmployeeInput): Employee {
   const id = `e${String(n).padStart(2, "0")}x${Date.now().toString(36)}`;
   const employee: Employee = {
     ...input,
+    client_id: input.client_id ?? null,
     id,
     organization_id: ORG_ID,
     employee_number: `HLD-${String(n).padStart(4, "0")}`,
@@ -240,7 +247,7 @@ export function recordTime(c: TimeCapture): TimeRecord {
     id: `tr-${c.employeeId}-${Date.now().toString(36)}`,
     organization_id: ORG_ID,
     employee_id: c.employeeId,
-    shift_code_id: emp.shift_code_id,
+    shift_code_id: scheduleFor(db, emp, workDateForDb(db, emp, nowIso)).assignment?.shift_code_id ?? emp.shift_code_id,
     kind: c.kind,
     recorded_at: nowIso,
     work_date: workDateFor(emp, nowIso),
@@ -256,30 +263,13 @@ export function recordTime(c: TimeCapture): TimeRecord {
   return rec;
 }
 
-/** Overnight shifts belong to the day they started: a 2 AM clock-out on a 10 PM shift counts for the day before. */
-export function workDateFor(emp: Employee, iso: string): string {
-  const shift = db.shift_codes.find((s) => s.id === emp.shift_code_id);
-  const z = zoned(iso, shift?.timezone);
-  if (shift && shift.end_time <= shift.start_time) {
-    const [eh, em] = shift.end_time.split(":").map(Number);
-    if (z.minutes < eh * 60 + em + 4 * 60) {
-      const d = new Date(`${z.date}T00:00:00Z`);
-      d.setUTCDate(d.getUTCDate() - 1);
-      const open = db.time_records.some((r) => r.employee_id === emp.id && r.work_date === d.toISOString().slice(0, 10));
-      if (open) return d.toISOString().slice(0, 10);
-    }
-  }
-  return z.date;
-}
+/** Overnight shifts belong to the day they started (see lib/schedule.ts). */
+export const workDateFor = (emp: Employee, iso: string) => workDateForDb(db, emp, iso);
 
 // ---- Requests: overtime and time corrections -------------------------------------
 
-/** Managers approve their own direct reports; admin and HR approve anyone. Nobody approves their own request. */
-export function canApprove(d: Database, approver: Employee, employeeId: string): boolean {
-  if (approver.id === employeeId) return false;
-  if (approver.role === "admin" || approver.role === "hr") return true;
-  return d.employees.find((e) => e.id === employeeId)?.manager_id === approver.id;
-}
+/** Direct supervisor, or a role the organization allows (lib/approvals.ts). */
+export { canApprove } from "./approvals";
 
 export function isPeriodLocked(d: Database, date: string): boolean {
   return d.payroll_periods.some((p) => p.status !== "open" && date >= p.start_date && date <= p.end_date);
@@ -375,7 +365,9 @@ export function savePayItemType(row: Omit<PayItemType, "id"> & { id?: string }):
 
 export function fileLeave(input: Pick<LeaveRequest, "employee_id" | "leave_type_id" | "start_date" | "end_date" | "half_day" | "reason">): LeaveRequest {
   const row: LeaveRequest = { ...input, id: `lv-${Date.now().toString(36)}`, status: "pending", filed_at: new Date().toISOString(), decided_by: null, decided_at: null, decision_note: null };
-  commit({ ...db, leave_requests: [...db.leave_requests, row] });
+  const next = { ...db, leave_requests: [...db.leave_requests, row] };
+  // Short-notice leave on a scheduled shift: operations hears about it now, not at approval.
+  commit({ ...next, notifications: [...next.notifications, ...leaveNotifications(next, row, "filed", TODAY, row.filed_at, uid, null)] });
   return row;
 }
 
@@ -385,7 +377,11 @@ export function cancelLeave(id: string) {
 
 export function decideLeave(id: string, approverId: string, approve: boolean, note: string | null) {
   const decided = { status: approve ? ("approved" as const) : ("rejected" as const), decided_by: approverId, decided_at: new Date().toISOString(), decision_note: note };
-  commit({ ...db, leave_requests: db.leave_requests.map((r) => (r.id === id ? { ...r, ...decided } : r)) });
+  const next = { ...db, leave_requests: db.leave_requests.map((r) => (r.id === id ? { ...r, ...decided } : r)) };
+  const row = next.leave_requests.find((r) => r.id === id)!;
+  // Approved leave on scheduled shifts: tell operations, the manager and whoever scheduled them.
+  const sent = approve ? leaveNotifications(next, row, "approved", TODAY, decided.decided_at, uid, approverId) : [];
+  commit({ ...next, notifications: [...next.notifications, ...sent] });
 }
 
 /** Saves a leave policy. Statutory types can be made more generous, never less (enforced in the form and here). */
@@ -418,4 +414,103 @@ export function separateEmployee(id: string, lastDay: string, reason: Separation
     employees: db.employees.map((x) => (x.id === id ? { ...x, end_date: lastDay, separation_reason: reason, separation_notice_date: noticeDate, status: lastDay < TODAY ? "offboarded" as const : x.status } : x)),
     employment_events: [...db.employment_events, { id: `ev-${id}-sep-${lastDay}`, employee_id: id, effective_date: lastDay, kind: "separated", job_title: e.job_title, department_id: e.department_id, note: null }],
   });
+}
+
+// ---- Organization: departments, branches, clients ----------------------------------
+
+let seq = 0;
+const uid = (p: string) => `${p}-${Date.now().toString(36)}${(++seq).toString(36)}`;
+
+type OrgField = "department_id" | "location_id" | "client_id";
+const peopleIn = (field: OrgField, id: string) => db.employees.filter((e) => e[field] === id && e.status !== "offboarded");
+
+export function saveDepartment(row: Pick<Department, "name" | "head_id"> & { id?: string }): Department {
+  const saved: Department = { id: row.id ?? uid("dep"), organization_id: ORG_ID, name: row.name.trim(), head_id: row.head_id };
+  commit({ ...db, departments: db.departments.some((d) => d.id === saved.id) ? db.departments.map((d) => (d.id === saved.id ? saved : d)) : [...db.departments, saved] });
+  return saved;
+}
+
+export function saveBranch(row: Omit<Location, "id" | "organization_id"> & { id?: string }): Location {
+  const saved: Location = { ...row, id: row.id ?? uid("loc"), organization_id: ORG_ID, name: row.name.trim() };
+  commit({ ...db, locations: db.locations.some((l) => l.id === saved.id) ? db.locations.map((l) => (l.id === saved.id ? saved : l)) : [...db.locations, saved] });
+  return saved;
+}
+
+export function saveClient(row: Pick<Client, "name" | "code" | "industry"> & { id?: string }): Client {
+  const existing = db.clients.find((c) => c.id === row.id);
+  const saved: Client = { id: row.id ?? uid("cl"), organization_id: ORG_ID, name: row.name.trim(), code: row.code.trim().toUpperCase(), industry: row.industry, archived_at: existing?.archived_at ?? null };
+  commit({ ...db, clients: existing ? db.clients.map((c) => (c.id === saved.id ? saved : c)) : [...db.clients, saved] });
+  return saved;
+}
+
+/** Archiving a client takes everyone off it; past records keep the name. */
+export function archiveClient(id: string, archived: boolean) {
+  commit({
+    ...db,
+    clients: db.clients.map((c) => (c.id === id ? { ...c, archived_at: archived ? new Date().toISOString() : null } : c)),
+    employees: archived ? db.employees.map((e) => (e.client_id === id ? { ...e, client_id: null } : e)) : db.employees,
+  });
+}
+
+/** Deletes a department or branch nobody is in. Returns why it can't, or null. */
+export function deleteOrgUnit(kind: "department" | "branch", id: string): string | null {
+  const field: OrgField = kind === "department" ? "department_id" : "location_id";
+  const n = db.employees.filter((e) => e[field] === id).length;
+  if (n) return `${n} ${n === 1 ? "person is" : "people are"} still assigned here, including former staff. Move them first.`;
+  if (kind === "department") commit({ ...db, departments: db.departments.filter((d) => d.id !== id) });
+  else commit({ ...db, locations: db.locations.filter((l) => l.id !== id) });
+  return null;
+}
+
+/** Moves people into a department, branch or client (null takes them off a client). Department moves are logged as transfers. */
+export function assignPeople(field: OrgField, value: string | null, employeeIds: string[]) {
+  const ids = new Set(employeeIds);
+  const moved = db.employees.filter((e) => ids.has(e.id) && e[field] !== value);
+  const dept = field === "department_id" ? db.departments.find((d) => d.id === value) : undefined;
+  commit({
+    ...db,
+    employees: db.employees.map((e) => (ids.has(e.id) ? { ...e, [field]: value } : e)),
+    employment_events: dept
+      ? [...db.employment_events, ...moved.map((e) => ({ id: uid("ev"), employee_id: e.id, effective_date: TODAY, kind: "transfer" as const, job_title: e.job_title, department_id: dept.id, note: `Moved to ${dept.name}` }))]
+      : db.employment_events,
+  });
+}
+
+export { peopleIn };
+
+// ---- Schedule ------------------------------------------------------------------------
+
+/** Assigns shifts (or rest days). All or nothing: any error and nothing is saved. Pending leave comes back as warnings. */
+export function assignSchedule(entries: AssignmentInput[], byId: string) {
+  const { errors, warnings } = checkAssignments(db, entries, TODAY);
+  if (Object.keys(errors).length) return { errors, warnings, saved: 0 };
+  const rows = toAssignments(ORG_ID, entries, byId, new Date().toISOString());
+  const keys = new Set(rows.map((r) => r.id));
+  commit({ ...db, shift_assignments: [...db.shift_assignments.filter((a) => !keys.has(a.id)), ...rows] });
+  return { errors, warnings, saved: rows.length };
+}
+
+/** Puts days back on the person's default shift. Locked days are skipped. */
+export function resetSchedule(cells: { employee_id: string; work_date: string }[]) {
+  const ok = new Set(cells.filter((c) => {
+    const e = db.employees.find((x) => x.id === c.employee_id);
+    return e && !lockReason(db, e, c.work_date, TODAY);
+  }).map((c) => assignmentId(c.employee_id, c.work_date)));
+  commit({ ...db, shift_assignments: db.shift_assignments.filter((a) => !ok.has(a.id)) });
+  return ok.size;
+}
+
+export function updateApprovalSettings(patch: Partial<ApprovalSettings>) {
+  commit({ ...db, approval_settings: { ...db.approval_settings, ...patch } });
+}
+
+export function updateScheduleSettings(patch: Partial<ScheduleSettings>) {
+  commit({ ...db, schedule_settings: { ...db.schedule_settings, ...patch } });
+}
+
+// ---- Notifications -------------------------------------------------------------------
+
+export function markNotificationsRead(recipientId: string, ids?: string[]) {
+  const at = new Date().toISOString();
+  commit({ ...db, notifications: db.notifications.map((n) => (n.recipient_id === recipientId && !n.read_at && (!ids || ids.includes(n.id)) ? { ...n, read_at: at } : n)) });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import type { Employee, EmploymentStatus } from "@/lib/types";
 import { displayName, initials, statusLabel } from "@/lib/format";
 import { Icon, type IconName } from "./Icon";
@@ -144,6 +144,34 @@ export function Dialog({ title, description, onClose, children, footer, wide }: 
       </div>
     </div>
   );
+}
+
+// ---- Row menu: one visible row action, the rest in here -----------------
+
+export function RowMenu({ label, items }: { label: string; items: { label: string; run: () => void }[] }) {
+  const [open, setOpen] = useState(false);
+  if (!items.length) return <span className="menu-spacer" aria-hidden="true" />;
+  return (
+    <span className="row-menu" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false); }}>
+      <button type="button" className="icon-btn" aria-label={label} aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen(!open)}>
+        <Icon name="more" size={18} />
+      </button>
+      {open && (
+        <ul className="menu row-menu-list" role="menu" onKeyDown={(e) => e.key === "Escape" && setOpen(false)}>
+          {items.map((it) => (
+            <li key={it.label}><button type="button" role="menuitem" onClick={() => { setOpen(false); it.run(); }}>{it.label}</button></li>
+          ))}
+        </ul>
+      )}
+    </span>
+  );
+}
+
+// ---- No value -------------------------------------------------------------
+// The design system has no em dashes: an empty cell or field says "None".
+
+export function Blank({ text = "None" }: { text?: string }) {
+  return <span className="muted">{text}</span>;
 }
 
 // ---- Empty state ----------------------------------------------------------

@@ -4,7 +4,9 @@ import { z } from "zod";
 import type { CorrectionRequest, Database, LeaveRequest, OvertimeRequest, TimeRecord } from "@/lib/types";
 import { localToIso, spanMinutes } from "@/lib/time";
 import { requestDays, validateLeave } from "@/lib/leave";
-import { type Ctx, canDecide, canSee, deciderId, isPrivileged, requireScope, selfId } from "../context";
+import { leaveNotifications } from "@/lib/schedule";
+import { type Ctx, canDecide, canSee, deciderId, isPrivileged, requirePrivileged, requireScope, selfId } from "../context";
+import { approversFor, OPTIONAL_APPROVER_ROLES } from "@/lib/approvals";
 import { conflict, forbidden, invalid, notFound } from "../errors";
 import { isoDate, isoInstant, listQuery, paginate, parse } from "../validate";
 
@@ -68,7 +70,7 @@ export async function fileOvertime(ctx: Ctx, body: unknown) {
   }
   if (Object.keys(errors).length) throw invalid(errors);
   const row: OvertimeRequest = { ...input, id: ctx.repo.newId("ot"), employee_id: me, status: "pending", filed_at: ctx.now, decided_by: null, decided_at: null, decision_note: null };
-  return ctx.repo.insert("overtime_requests", row);
+  return { ...(await ctx.repo.insert("overtime_requests", row)), approver_ids: approverIds(db, me) };
 }
 
 export const FileCorrection = z.object({
@@ -92,7 +94,7 @@ export async function fileCorrection(ctx: Ctx, body: unknown) {
   if (Object.keys(errors).length) throw invalid(errors);
   const original = db.time_records.find((r) => r.employee_id === me && r.work_date === input.work_date && r.kind === recordKind && r.source === "device");
   const row: CorrectionRequest = { ...input, id: ctx.repo.newId("cr"), employee_id: me, original_record_id: input.kind.startsWith("wrong") ? original?.id ?? null : null, status: "pending", filed_at: ctx.now, decided_by: null, decided_at: null, decision_note: null };
-  return ctx.repo.insert("correction_requests", row);
+  return { ...(await ctx.repo.insert("correction_requests", row)), approver_ids: approverIds(db, me) };
 }
 
 export const FileLeave = z.object({ leave_type_id: z.string(), start_date: isoDate, end_date: isoDate, half_day: z.boolean().default(false), reason: z.string().trim().min(3, "Add a short note for your approver.") });
@@ -108,7 +110,11 @@ export async function fileLeave(ctx: Ctx, body: unknown) {
   if (isLocked(db, input.start_date)) errors.start_date = "Payroll for this date is finalized. Ask HR to handle it as an adjustment.";
   if (Object.keys(errors).length) throw invalid(errors);
   const row: LeaveRequest = { ...input, id: ctx.repo.newId("lv"), employee_id: me, status: "pending", filed_at: ctx.now, decided_by: null, decided_at: null, decision_note: null };
-  return { ...(await ctx.repo.insert("leave_requests", row)), days: requestDays(db, row) };
+  const saved = await ctx.repo.insert("leave_requests", row);
+  // Short notice on a scheduled shift: operations hears now, not only at approval.
+  const sent = leaveNotifications({ ...db, leave_requests: [...db.leave_requests, row] }, row, "filed", ctx.now.slice(0, 10), ctx.now, (p) => ctx.repo.newId(p), null);
+  if (sent.length) await ctx.repo.upsert("notifications", sent);
+  return { ...saved, days: requestDays(db, row), notified: sent.map((n) => n.recipient_id), approver_ids: approverIds(db, me) };
 }
 
 export const Decision = z.object({ approve: z.boolean(), note: z.string().trim().nullable().optional() })
@@ -121,7 +127,7 @@ export async function decide(ctx: Ctx, kind: Kind, id: string, body: unknown) {
   const db = await ctx.repo.snapshot(ctx.orgId);
   const req = (db[TABLE[kind]] as AnyRequest[]).find((r) => r.id === id);
   if (!req) throw notFound("Request");
-  if (!canDecide(ctx, db, req.employee_id)) throw forbidden(req.employee_id === by ? "You can't decide your own request." : "Only their manager, admin or HR can decide this.");
+  if (!canDecide(ctx, db, req.employee_id)) throw forbidden(req.employee_id === by ? "You can't decide your own request." : "Only their direct supervisor, or someone in an approver role, can decide this.");
   if (req.status !== "pending") throw conflict(`This request is already ${req.status}.`);
   if (isLocked(db, dateOf(req))) throw conflict("Payroll for this date is finalized. Handle it as a payroll adjustment.");
   const decided = { status: input.approve ? ("approved" as const) : ("rejected" as const), decided_by: by, decided_at: ctx.now, decision_note: input.approve ? input.note ?? null : input.note! };
@@ -137,6 +143,13 @@ export async function decide(ctx: Ctx, kind: Kind, id: string, body: unknown) {
     };
     await ctx.repo.insert("time_records", rec);
   }
+  if (kind === "leave" && input.approve) {
+    // Approved leave on scheduled shifts: the shifts become coverage gaps; tell operations, the manager and the scheduler.
+    const lv = { ...(req as LeaveRequest), ...decided };
+    const sent = leaveNotifications({ ...db, leave_requests: db.leave_requests.map((r) => (r.id === id ? lv : r)) }, lv, "approved", ctx.now.slice(0, 10), ctx.now, (p) => ctx.repo.newId(p), by);
+    if (sent.length) await ctx.repo.upsert("notifications", sent);
+    return { ...row, notified: sent.map((n) => n.recipient_id) };
+  }
   return row;
 }
 
@@ -150,4 +163,31 @@ export async function cancel(ctx: Ctx, kind: Kind, id: string) {
   if (req.status !== "pending") throw conflict(`This request is already ${req.status}.`);
   const [row] = await ctx.repo.update(TABLE[kind], "id", id, { status: "cancelled" } as never);
   return row;
+}
+
+// ---- Who approves --------------------------------------------------------------------
+
+const approverIds = (db: Database, employeeId: string) => approversFor(db, employeeId).people.map((e) => e.id);
+
+export async function getApprovalSettings(ctx: Ctx) {
+  requireScope(ctx, "requests:read");
+  const db = await ctx.repo.snapshot(ctx.orgId);
+  return { ...db.approval_settings, always: ["admin"], plus: "each person's direct supervisor" };
+}
+export const ApprovalSettingsBody = z.object({ approver_roles: z.array(z.enum(OPTIONAL_APPROVER_ROLES)).max(2) }).strict();
+export async function putApprovalSettings(ctx: Ctx, body: unknown) {
+  requirePrivileged(ctx, "requests:write");
+  const input = parse(ApprovalSettingsBody, body);
+  return ctx.repo.updateApprovalSettings(ctx.orgId, { approver_roles: [...new Set(input.approver_roles)] });
+}
+
+export const ApproversQuery = z.object({ employee_id: z.string() });
+export async function getApprovers(ctx: Ctx, query: unknown) {
+  requireScope(ctx, "requests:read");
+  const q = parse(ApproversQuery, query);
+  const db = await ctx.repo.snapshot(ctx.orgId);
+  if (!db.employees.some((e) => e.id === q.employee_id)) throw notFound("Employee");
+  if (!canSee(ctx, db, q.employee_id, { manager: true }) && !canDecide(ctx, db, q.employee_id)) throw forbidden();
+  const a = approversFor(db, q.employee_id);
+  return { supervisor_id: a.supervisor?.id ?? null, roles: a.roles, approver_ids: a.people.map((e) => e.id) };
 }

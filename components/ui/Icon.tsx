@@ -18,6 +18,8 @@ const paths = {
   x: "M6 6l12 12M18 6L6 18",
   chevronRight: "M9 6l6 6-6 6",
   chevronDown: "M6 9l6 6 6-6",
+  bell: "M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0",
+  building: "M5 21V4h9v17M14 9h5v12M3 21h18M8 8h3M8 12h3M8 16h3M17 13h.01M17 17h.01",
   chevronLeft: "M15 6l-6 6 6 6",
   arrowUpDown: "M8 4v16M4 8l4-4 4 4M16 20V4M12 16l4 4 4-4",
   mail: "M4 6h16v12H4zM4 7l8 6 8-6",

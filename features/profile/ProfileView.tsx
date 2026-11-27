@@ -8,7 +8,7 @@ import { displayName, employmentTypeLabel, formatBytes, formatDate, legalName, s
 import type { Employee, EmploymentStatus } from "@/lib/types";
 import { PayTab } from "./PayTab";
 import { EmploymentTerms, LeaveTab } from "./EmploymentTab";
-import { Avatar, Button, Dialog, EmptyState, Field, Icon, PersonCell, Progress, StatusBadge } from "@/components/ui";
+import { Avatar, Button, Dialog, EmptyState, Field, Icon, PersonCell, Progress, StatusBadge, Blank } from "@/components/ui";
 
 type Tab = "overview" | "employment" | "leave" | "documents" | "pay";
 
@@ -115,7 +115,7 @@ export function ProfileView({ id }: { id: string }) {
               <h2>Job</h2>
               <dl className="dl">
                 <div><dt>Employee ID</dt><dd className="num">{e.employee_number}</dd></div>
-                <div><dt>Department</dt><dd>{dept?.name ?? "—"}</dd></div>
+                <div><dt>Department</dt><dd>{dept?.name ?? <Blank />}</dd></div>
                 <div><dt>Employment type</dt><dd>{employmentTypeLabel[e.employment_type]}</dd></div>
                 <div><dt>Start date</dt><dd>{formatDate(e.start_date)} <span className="muted">· {tenure(e.start_date, today())}</span></dd></div>
                 <div>
@@ -125,7 +125,8 @@ export function ProfileView({ id }: { id: string }) {
                     {canManage && <> · <button type="button" className="link" onClick={() => setEditing(true)}>{shift ? "Change" : "Assign"}</button></>}
                   </dd>
                 </div>
-                <div><dt>Location</dt><dd>{loc?.name ?? "—"}{localTime && <span className="muted" suppressHydrationWarning> · {localTime} local time</span>}</dd></div>
+                {(e.client_id || db.clients.length > 0) && <div><dt>Client</dt><dd>{db.clients.find((c) => c.id === e.client_id)?.name ?? <span className="muted">Not on a client</span>}</dd></div>}
+                <div><dt>Branch</dt><dd>{loc?.name ?? <Blank />}{localTime && <span className="muted" suppressHydrationWarning> · {localTime} local time</span>}</dd></div>
                 {e.end_date && <div><dt>Last day</dt><dd>{formatDate(e.end_date)}</dd></div>}
               </dl>
             </section>
@@ -234,6 +235,7 @@ function EditDialog({ employee, onClose }: { employee: Employee; onClose: () => 
     job_title: employee.job_title,
     department_id: employee.department_id ?? "",
     location_id: employee.location_id ?? "",
+    client_id: employee.client_id ?? "",
     manager_id: employee.manager_id ?? "",
     phone: employee.phone ?? "",
     status: employee.status,
@@ -262,6 +264,7 @@ function EditDialog({ employee, onClose }: { employee: Employee; onClose: () => 
       job_title: f.job_title.trim(),
       department_id: f.department_id || null,
       location_id: f.location_id || null,
+      client_id: f.client_id || null,
       manager_id: f.manager_id || null,
       phone: f.phone.trim() || null,
       status: f.status,
@@ -297,13 +300,23 @@ function EditDialog({ employee, onClose }: { employee: Employee; onClose: () => 
             </select>
           )}
         </Field>
-        <Field label="Location">
+        <Field label="Branch">
           {(id) => (
             <select id={id} value={f.location_id} onChange={(e) => set("location_id", e.target.value)}>
               {db.locations.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </select>
           )}
         </Field>
+        {db.clients.length > 0 && (
+          <Field label="Client">
+            {(id) => (
+              <select id={id} value={f.client_id} onChange={(e) => set("client_id", e.target.value)}>
+                <option value="">Not on a client</option>
+                {db.clients.filter((x) => !x.archived_at || x.id === f.client_id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            )}
+          </Field>
+        )}
         <Field label="Status">
           {(id) => (
             <select id={id} value={f.status} onChange={(e) => set("status", e.target.value as EmploymentStatus)}>

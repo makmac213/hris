@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { indexById, today, useCurrentUser, useDb } from "@/lib/store";
 import { displayName, formatDate, statusLabel } from "@/lib/format";
 import type { Employee, EmploymentStatus } from "@/lib/types";
-import { Button, EmptyState, FilterSelect, Icon, PersonCell, SearchInput, StatusBadge } from "@/components/ui";
+import { Button, EmptyState, FilterSelect, Icon, PersonCell, SearchInput, StatusBadge, Blank } from "@/components/ui";
 import { AddEmployeeDialog } from "./AddEmployeeDialog";
 
 type SortKey = "name" | "department" | "location" | "manager" | "start" | "status";
@@ -18,6 +18,7 @@ export function DirectoryView() {
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("");
   const [loc, setLoc] = useState("");
+  const [client, setClient] = useState("");
   const [status, setStatus] = useState<EmploymentStatus | "">("");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "name", dir: 1 });
   const [adding, setAdding] = useState(false);
@@ -45,16 +46,17 @@ export function DirectoryView() {
       .filter((e) => (status ? e.status === status : e.status !== "offboarded"))
       .filter((e) => !dept || e.department_id === dept)
       .filter((e) => !loc || e.location_id === loc)
+      .filter((e) => !client || e.client_id === client)
       .filter((e) => {
         if (!needle) return true;
         const hay = [displayName(e), e.first_name, e.last_name, e.job_title, e.work_email, e.employee_number].join(" ").toLowerCase();
         return hay.includes(needle);
       })
       .sort((a, b) => sortVal(a).localeCompare(sortVal(b)) * sort.dir);
-  }, [db.employees, q, dept, loc, status, sort, deps, locs, people]);
+  }, [db.employees, q, dept, loc, client, status, sort, deps, locs, people]);
 
-  const filtered = Boolean(q || dept || loc || status);
-  const clear = () => { setQ(""); setDept(""); setLoc(""); setStatus(""); };
+  const filtered = Boolean(q || dept || loc || client || status);
+  const clear = () => { setQ(""); setDept(""); setLoc(""); setClient(""); setStatus(""); };
 
   const th = (k: SortKey, children: string, className = "") => {
     const active = sort.key === k;
@@ -85,7 +87,8 @@ export function DirectoryView() {
         <SearchInput value={q} onChange={setQ} label="Search employees" placeholder="Search by name, title, email or ID" />
         <div className="filters">
           <FilterSelect label="Departments" value={dept} onChange={setDept} options={db.departments.map((d) => ({ value: d.id, label: d.name }))} />
-          <FilterSelect label="Locations" value={loc} onChange={setLoc} options={db.locations.map((l) => ({ value: l.id, label: l.name }))} />
+          <FilterSelect label="Branches" value={loc} onChange={setLoc} options={db.locations.map((l) => ({ value: l.id, label: l.name }))} />
+          {db.clients.some((c) => !c.archived_at) && <FilterSelect label="Clients" value={client} onChange={setClient} options={db.clients.filter((c) => !c.archived_at).map((c) => ({ value: c.id, label: c.name }))} />}
           <FilterSelect<EmploymentStatus>
             label="Status"
             allLabel="Current employees"
@@ -104,7 +107,7 @@ export function DirectoryView() {
       {rows.length === 0 ? (
         <EmptyState
           title="No one matches these filters"
-          body={q ? `Nobody's name, title, email or ID contains “${q}”. Check the spelling or widen the filters.` : "Try another department, location or status."}
+          body={q ? `Nobody's name, title, email or ID contains “${q}”. Check the spelling or widen the filters.` : "Try another department, branch, client or status."}
           action={<Button onClick={clear}>Clear filters</Button>}
         />
       ) : (
@@ -114,7 +117,7 @@ export function DirectoryView() {
               <tr>
                 {th("name", "Name")}
                 {th("department", "Department", "col-md")}
-                {th("location", "Location", "col-lg")}
+                {th("location", "Branch", "col-lg")}
                 {th("manager", "Manager", "col-lg")}
                 {th("start", "Start date", "col-md")}
                 {th("status", "Status")}
@@ -130,8 +133,8 @@ export function DirectoryView() {
                         <PersonCell person={e} sub={e.job_title} />
                       </Link>
                     </td>
-                    <td className="col-md">{deps.get(e.department_id ?? "")?.name ?? "—"}</td>
-                    <td className="col-lg">{locs.get(e.location_id ?? "")?.name ?? "—"}</td>
+                    <td className="col-md">{deps.get(e.department_id ?? "")?.name ?? <Blank />}</td>
+                    <td className="col-lg">{locs.get(e.location_id ?? "")?.name ?? <Blank />}</td>
                     <td className="col-lg">{m ? displayName(m) : <span className="muted">No manager</span>}</td>
                     <td className="col-md num">{formatDate(e.start_date)}</td>
                     <td>{e.status === "active" ? <span className="muted">Active</span> : <StatusBadge status={e.status} />}</td>

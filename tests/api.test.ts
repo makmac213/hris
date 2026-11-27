@@ -227,3 +227,102 @@ test("the OpenAPI spec is public and covers every route", async () => {
   assert.ok(r.body.paths["/leave-requests/{id}/decision"].post.requestBody);
   assert.ok(r.body.paths["/employees"].get.parameters.some((p: { name: string }) => p.name === "q"));
 });
+
+// ---- Organization and schedule ---------------------------------------------------
+
+const SEED_TODAY = (await resetMemoryRepo().snapshot(ORG_ID)).leave_requests.find((r) => r.id === "lv-10")!.start_date;
+
+test("schedule: operations sees everyone and the gap; managers their team; others only themselves", async () => {
+  const q = `/schedule?from=${SEED_TODAY}&to=${SEED_TODAY}`;
+  const ops = await call("GET", `${q}&department_id=dep-ops`, { as: "e40" });
+  assert.equal(ops.status, 200);
+  const paul = ops.body.data.find((r: { employee: { id: string } }) => r.employee.id === "e43");
+  assert.equal(paul.days[0].coverage_gap, true);
+  assert.equal(paul.days[0].leave.status, "approved");
+  const lead = await call("GET", q, { as: "e41" });
+  assert.deepEqual(new Set(lead.body.data.map((r: { employee: { id: string } }) => r.employee.id)), new Set(["e41", "e42", "e43", "e47"]));
+  const agent = await call("GET", q, { as: "e42" });
+  assert.deepEqual(agent.body.data.map((r: { employee: { id: string } }) => r.employee.id), ["e42"]);
+  assert.equal((await call("GET", `/schedule?from=${SEED_TODAY}&to=2099-01-01`, { as: "e40" })).status, 422);
+});
+
+test("schedule: only operations, admin and HR assign; approved leave is refused, pending leave is a warning", async () => {
+  const db = await repo.snapshot(ORG_ID);
+  const approved = db.leave_requests.find((r) => r.id === "lv-12")!;
+  const pending = db.leave_requests.find((r) => r.id === "lv-11")!;
+  const one = (employee_id: string, date: string) => ({ entries: [{ employee_id, date, shift_code_id: "sc-ph-d0700" }] });
+  assert.equal((await call("PUT", "/schedule", { as: "e42", body: one("e44", pending.start_date) })).status, 403);
+  assert.equal((await call("PUT", "/schedule", { as: "e41", body: one("e42", pending.start_date) })).status, 403, "team leads view, operations schedules");
+  const refused = await call("PUT", "/schedule", { as: "e40", body: one("e46", approved.start_date) });
+  assert.equal(refused.status, 422);
+  assert.match(refused.body.error.details[`e46:${approved.start_date}`], /approved vacation leave/);
+  const warned = await call("PUT", "/schedule", { as: "e40", body: one("e44", pending.start_date) });
+  assert.equal(warned.status, 200);
+  assert.match(warned.body.warnings[`e44:${pending.start_date}`], /notified/);
+  const reset = await call("DELETE", "/schedule", { as: "e40", body: { entries: [{ employee_id: "e44", date: pending.start_date }] } });
+  assert.equal(reset.body.reset, 1);
+  const key = apiKey(["schedule:read", "schedule:write"]);
+  assert.equal((await call("PUT", "/schedule", { token: key, body: one("e44", pending.start_date) })).status, 200, "a WFM tool with schedule:write");
+});
+
+test("approving leave on scheduled shifts notifies operations; they can read and clear it", async () => {
+  const d = await call("POST", "/leave-requests/lv-11/decision", { as: "e04", body: { approve: true } });
+  assert.equal(d.status, 200);
+  assert.ok(d.body.notified.includes("e40") && d.body.notified.includes("e45"), "operations and the manager");
+  const list = await call("GET", "/notifications?unread=true", { as: "e40" });
+  const n = list.body.data.find((x: { employee_id: string; kind: string }) => x.employee_id === "e44" && x.kind === "leave_approved_on_shift");
+  assert.ok(n);
+  const gaps = await call("GET", "/schedule/gaps?department_id=dep-ops", { as: "e40" });
+  assert.ok(gaps.body.data.some((g: { employee_id: string }) => g.employee_id === "e44"));
+  assert.equal((await call("POST", "/notifications/read", { as: "e40", body: { ids: [n.id] } })).body.marked, 1);
+  assert.equal((await call("GET", "/notifications", { token: apiKey(["schedule:read"]) })).status, 403);
+});
+
+test("organization: clients, members and archiving; departments with people can't be deleted", async () => {
+  const c = await call("POST", "/clients", { as: "e10", body: { name: "Harbor Air", code: "hba", industry: "Airline" } });
+  assert.equal(c.status, 201);
+  assert.equal(c.body.code, "HBA");
+  assert.equal((await call("POST", "/clients", { as: "e10", body: { name: "Other", code: "HBA" } })).status, 422);
+  assert.equal((await call("POST", "/clients", { as: "e40", body: { name: "X", code: "XX" } })).status, 403);
+  assert.equal((await call("POST", `/clients/${c.body.id}/members`, { as: "e10", body: { employee_ids: ["e42", "e43"] } })).body.moved, 2);
+  assert.equal((await call("GET", "/employees/e42", { as: "e10" })).body.client_id, c.body.id);
+  await call("PATCH", `/clients/${c.body.id}`, { as: "e10", body: { archived: true } });
+  assert.equal((await call("GET", "/employees/e42", { as: "e10" })).body.client_id, null);
+  assert.equal((await call("DELETE", "/departments/dep-ops", { as: "e10" })).status, 409);
+  const dep = await call("POST", "/departments", { as: "e10", body: { name: "Quality Assurance" } });
+  assert.equal((await call("DELETE", `/departments/${dep.body.id}`, { as: "e10" })).status, 200);
+  const br = await call("POST", "/branches", { as: "e10", body: { name: "Davao", city: "Davao City", country_code: "PH" } });
+  assert.equal(br.status, 422, "a Philippine branch needs a region");
+  assert.equal((await call("POST", "/branches", { as: "e10", body: { name: "Davao", city: "Davao City", country_code: "PH", ph_region: "XI" } })).status, 201);
+});
+
+test("schedule settings: operations can widen the window within limits", async () => {
+  assert.equal((await call("PATCH", "/schedule/settings", { as: "e40", body: { horizon_days: 90 } })).body.horizon_days, 90);
+  assert.equal((await call("PATCH", "/schedule/settings", { as: "e40", body: { horizon_days: 400 } })).status, 422);
+  assert.equal((await call("PATCH", "/schedule/settings", { as: "e16", body: { horizon_days: 30 } })).status, 403);
+});
+
+test("approvers: the direct supervisor, plus the roles the organization turns on", async () => {
+  const day = "2026-12-03";
+  const filed = await call("POST", "/leave-requests", { as: "e19", body: { leave_type_id: "lt-vl", start_date: day, end_date: day, reason: "Family errand" } });
+  assert.equal(filed.status, 201);
+  assert.ok(filed.body.approver_ids.includes("e08"), "their supervisor");
+  assert.ok(filed.body.approver_ids.includes("e04") && filed.body.approver_ids.includes("e10"), "admin and HR by default");
+  assert.ok(!filed.body.approver_ids.includes("e40"), "operations is off by default");
+
+  const who = await call("GET", "/approvers?employee_id=e19", { as: "e19" });
+  assert.equal(who.body.supervisor_id, "e08");
+  assert.deepEqual(who.body.roles, ["admin", "hr"]);
+
+  assert.equal((await call("POST", `/leave-requests/${filed.body.id}/decision`, { as: "e40", body: { approve: true } })).status, 403);
+  assert.equal((await call("PATCH", "/approval-settings", { as: "e19", body: { approver_roles: ["operations"] } })).status, 403, "employees can't change who approves");
+  assert.equal((await call("PATCH", "/approval-settings", { as: "e10", body: { approver_roles: ["admin"] } })).status, 422, "admin is always on, not a choice");
+  const saved = await call("PATCH", "/approval-settings", { as: "e10", body: { approver_roles: ["operations"] } });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.body.approver_roles, ["operations"]);
+
+  assert.equal((await call("POST", `/leave-requests/${filed.body.id}/decision`, { as: "e22", body: { approve: true } })).status, 403, "HR is now off");
+  const ok = await call("POST", `/leave-requests/${filed.body.id}/decision`, { as: "e40", body: { approve: true } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.decided_by, "e40");
+});

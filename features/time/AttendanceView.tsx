@@ -5,8 +5,9 @@ import { useMemo, useState } from "react";
 import { useCurrentUser, useDb } from "@/lib/store";
 import { displayName, formatDate } from "@/lib/format";
 import { formatDuration, formatInstant, summarizeDay, zoned, type DaySummary } from "@/lib/time";
+import { leaveOn, scheduleFor } from "@/lib/schedule";
 import type { Employee, ShiftCode } from "@/lib/types";
-import { Dialog, EmptyState, Button, PersonCell } from "@/components/ui";
+import { Dialog, EmptyState, Button, PersonCell, Blank } from "@/components/ui";
 import { DayStatusBadge, ProofPhoto, RecordWhere, ShiftSummary, useNow } from "./shared";
 
 type Filter = "all" | "late" | "missing" | "no_out";
@@ -34,8 +35,11 @@ export function AttendanceView() {
     return db.employees
       .filter((e) => e.status !== "offboarded" && e.start_date <= date && (e.shift_code_id || recs.some((r) => r.employee_id === e.id)))
       .map((e) => {
-        const shift = db.shift_codes.find((s) => s.id === e.shift_code_id);
-        return { e, shift, s: summarizeDay(recs.filter((r) => r.employee_id === e.id), shift, date, nowIso, e.status === "on_leave") };
+        const sc = scheduleFor(db, e, date);
+        const shift = sc.shift;
+        const lv = leaveOn(db, e.id, date);
+        const onLeave = e.status === "on_leave" || (lv?.status === "approved" && !lv.request.half_day);
+        return { e, shift, s: summarizeDay(recs.filter((r) => r.employee_id === e.id), shift, date, nowIso, onLeave, sc.source === "scheduled" ? sc.rest : undefined) };
       })
       .sort((a, b) => rank(a.s) - rank(b.s) || displayName(a.e).localeCompare(displayName(b.e)));
   }, [db, date, nowIso]);
@@ -115,9 +119,9 @@ export function AttendanceView() {
                         : <PersonCell person={r.e} sub={r.e.job_title} />}
                     </td>
                     <td className="col-lg"><ShiftSummary shift={r.shift} /></td>
-                    <td className="num">{r.s.clockIn ? formatInstant(r.s.clockIn.recorded_at, tz) : "—"}</td>
-                    <td className="num col-md">{r.s.clockOut ? formatInstant(r.s.clockOut.recorded_at, tz) : "—"}</td>
-                    <td className="num col-lg">{r.s.workedMinutes ? formatDuration(r.s.workedMinutes) : "—"}</td>
+                    <td className="num">{r.s.clockIn ? formatInstant(r.s.clockIn.recorded_at, tz) : <Blank />}</td>
+                    <td className="num col-md">{r.s.clockOut ? formatInstant(r.s.clockOut.recorded_at, tz) : <Blank />}</td>
+                    <td className="num col-lg">{r.s.workedMinutes ? formatDuration(r.s.workedMinutes) : <Blank />}</td>
                     <td><DayStatusBadge s={r.s} /></td>
                     <td className="col-md">
                       <span className="proof-thumbs">

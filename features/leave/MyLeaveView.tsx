@@ -1,11 +1,12 @@
 "use client";
 
+import { approverText } from "@/lib/approvals";
 import { useState, type FormEvent } from "react";
 import { cancelLeave, fileLeave, isPeriodLocked, today, useCurrentUser, useDb } from "@/lib/store";
 import { displayName, formatDate } from "@/lib/format";
 import { SIL_ID, leaveBalance, leaveTypesFor, requestDays, validateLeave, type LeaveBalance } from "@/lib/leave";
 import type { Database, Employee, LeaveType } from "@/lib/types";
-import { Button, Dialog, EmptyState, Field, Icon } from "@/components/ui";
+import { Button, Dialog, EmptyState, Field, Icon, Blank } from "@/components/ui";
 import { RequestStatusBadge } from "@/features/requests/MyRequests";
 
 const days = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
@@ -49,9 +50,9 @@ export function BalanceTable({ balances, caption }: { balances: LeaveBalance[]; 
                   </span>
                 </td>
                 <td className="num r col-md">{b.granted}{b.adjusted ? <span className="muted small"> {b.adjusted > 0 ? "+" : "−"}{Math.abs(b.adjusted)}</span> : null}</td>
-                <td className="num r col-md">{b.carried || "—"}</td>
-                <td className="num r">{b.used || "—"}</td>
-                <td className="num r col-md">{b.pending || "—"}</td>
+                <td className="num r col-md">{b.carried || <Blank />}</td>
+                <td className="num r">{b.used || <Blank />}</td>
+                <td className="num r col-md">{b.pending || <Blank />}</td>
                 <td className="num r"><strong>{b.available}</strong></td>
               </tr>
             );
@@ -168,7 +169,7 @@ export function LeaveDialog({ employee, initialType, onClose, onDone }: { employ
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => { setF((p) => ({ ...p, [k]: v, ...(k === "start" && p.end < (v as string) ? { end: v as string } : {}) })); setErrors({}); };
   const t = types.find((x) => x.id === f.type)!;
-  const n = f.half ? 0.5 : requestDays(db, { start_date: f.start, end_date: f.end, half_day: false, leave_type_id: t.id });
+  const n = f.half ? 0.5 : requestDays(db, { start_date: f.start, end_date: f.end, half_day: false, leave_type_id: t.id, employee_id: employee.id });
   const year = Number(f.start.slice(0, 4));
   const b = leaveBalance(db, employee, t, year, f.start > today() ? f.start : today()); // credits earned by the first day
 
@@ -180,7 +181,7 @@ export function LeaveDialog({ employee, initialType, onClose, onDone }: { employ
     setErrors(e);
     if (Object.keys(e).length) return;
     fileLeave({ employee_id: employee.id, leave_type_id: t.id, start_date: f.start, end_date: f.end, half_day: f.half, reason: f.reason.trim() });
-    onDone(`${t.name} requested for ${f.half ? "half a day" : days(n)}. Your manager and HR can approve it.`);
+    onDone(`${t.name} requested for ${f.half ? "half a day" : days(n)}. It goes to ${approverText(db, employee.id, displayName)}.`);
   };
 
   return (
@@ -212,7 +213,7 @@ export function LeaveDialog({ employee, initialType, onClose, onDone }: { employ
           </label>
         )}
         <div className="span-2">
-          <Field label="Note for your approver" error={errors.reason} hint={t.requires_document ? `You’ll need: ${t.requires_document}.` : undefined}>
+          <Field label="Note for your approver" error={errors.reason} hint={`Goes to ${approverText(db, employee.id, displayName)}.${t.requires_document ? ` You’ll need: ${t.requires_document}.` : ""}`}>
             {(id, d) => <textarea id={id} rows={2} aria-describedby={d} value={f.reason} onChange={(e) => set("reason", e.target.value)} />}
           </Field>
         </div>

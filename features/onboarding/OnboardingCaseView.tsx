@@ -5,7 +5,7 @@ import { useState } from "react";
 import { caseSummary, setBuddy, setTaskDone, today, useDb } from "@/lib/store";
 import { daysBetween, displayName, formatDate, ownerLabel, phaseLabel } from "@/lib/format";
 import type { OnboardingPhase, TaskOwnerRole } from "@/lib/types";
-import { Avatar, EmptyState, Icon, PersonCell, Progress } from "@/components/ui";
+import { Avatar, EmptyState, Icon, PersonCell, Progress, Blank } from "@/components/ui";
 
 const PHASES: OnboardingPhase[] = ["before_start", "first_day", "first_week", "first_90_days"];
 
@@ -128,7 +128,7 @@ export function OnboardingCaseView({ id }: { id: string }) {
             <h2>Details</h2>
             <dl className="dl dl-stack">
               <div><dt>Work email</dt><dd>{e.work_email}</dd></div>
-              <div><dt>Location</dt><dd>{db.locations.find((l) => l.id === e.location_id)?.name ?? "—"}</dd></div>
+              <div><dt>Location</dt><dd>{db.locations.find((l) => l.id === e.location_id)?.name ?? <Blank />}</dd></div>
               <div><dt>Template</dt><dd>Standard onboarding · {db.onboarding_template_tasks.length} tasks</dd></div>
             </dl>
           </section>

@@ -10,7 +10,7 @@ import { STATUTORY_LEAVES, grantedDays, leaveBalance, leaveTypesFor, validateLea
 import { creditedYears, legalStatus, probationEndFor } from "@/lib/employment";
 import { finalPay, retirementPay, separationPay } from "@/lib/finalpay";
 import { annualTax } from "@/lib/yearend";
-import type { Compensation, Database, Employee, Holiday, OvertimeRequest, PayItem, PayItemType, PayrollPeriod, PayrollSettings, ShiftCode, TimeRecord, LeaveType, LeaveRequest, PayrollOpening } from "@/lib/types";
+import type { Compensation, Database, Employee, Holiday, OvertimeRequest, PayItem, PayItemType, PayrollPeriod, PayrollSettings, ShiftCode, TimeRecord, LeaveType, LeaveRequest, PayrollOpening, ShiftAssignment } from "@/lib/types";
 
 const TZ = "Asia/Manila";
 const DAY: ShiftCode = { id: "s-day", organization_id: "o", code: "PH-D0900", name: "Day", kind: "whole_day", start_time: "09:00", end_time: "18:00", break_minutes: 60, timezone: TZ, grace_minutes: 5, source: "system_default", is_default: true, archived_at: null };
@@ -18,7 +18,7 @@ const NIGHT: ShiftCode = { ...DAY, id: "s-night", code: "PH-N2200", start_time: 
 const NOW = "2027-01-31T00:00:00Z"; // every test day is in the past
 
 function emp(over: Partial<Employee> = {}): Employee {
-  return { id: "e1", organization_id: "o", employee_number: "1", first_name: "Ana", last_name: "Cruz", preferred_name: null, pronouns: null, work_email: "a@x", phone: null, job_title: "Analyst", department_id: null, location_id: null, manager_id: null, employment_type: "full_time", status: "active", start_date: "2025-01-01", end_date: null, avatar_url: null, role: "employee", shift_code_id: "s-day",
+  return { id: "e1", organization_id: "o", employee_number: "1", first_name: "Ana", last_name: "Cruz", preferred_name: null, pronouns: null, work_email: "a@x", phone: null, job_title: "Analyst", department_id: null, location_id: null, client_id: null, manager_id: null, employment_type: "full_time", status: "active", start_date: "2025-01-01", end_date: null, avatar_url: null, role: "employee", shift_code_id: "s-day",
     employment_status_ph: "regular", probation_end_date: null, standards_given_on: "2025-01-01", contract_end_date: null, regularized_on: "2025-06-30", birth_date: null, separation_reason: null, separation_notice_date: null, ...over } as Employee;
 }
 function comp(over: Partial<Compensation> = {}): Compensation {
@@ -54,12 +54,13 @@ function ot(date: string, from: string, to: string, status: OvertimeRequest["sta
 function payItem(over: Partial<PayItem>): PayItem {
   return { id: `pi${++rid}`, type_id: null, employee_id: "e1", direction: "earning", category: "taxable_allowance", de_minimis_kind: null, label: "Item", amount: 1000, schedule: "every_cutoff", start_date: "2026-01-01", end_date: null, installments: null, authorization: null, created_by: "hr", created_at: NOW, ...over };
 }
-function db(o: { employee?: Partial<Employee>; comp?: Partial<Compensation>; records?: TimeRecord[]; ot?: OvertimeRequest[]; holidays?: Holiday[]; settings?: Partial<PayrollSettings>; items?: PayItem[]; overrides?: Database["employee_payroll_settings"]; shifts?: ShiftCode[]; types?: PayItemType[]; leaveTypes?: LeaveType[]; leave?: LeaveRequest[]; openings?: PayrollOpening[] } = {}): Database {
+function db(o: { employee?: Partial<Employee>; comp?: Partial<Compensation>; records?: TimeRecord[]; ot?: OvertimeRequest[]; holidays?: Holiday[]; settings?: Partial<PayrollSettings>; items?: PayItem[]; overrides?: Database["employee_payroll_settings"]; shifts?: ShiftCode[]; types?: PayItemType[]; leaveTypes?: LeaveType[]; leave?: LeaveRequest[]; openings?: PayrollOpening[]; assignments?: ShiftAssignment[] } = {}): Database {
   return {
     departments: [], locations: [], employees: [emp(o.employee)], employment_events: [], employee_documents: [], onboarding_template_tasks: [], onboarding_cases: [], onboarding_tasks: [],
     shift_codes: o.shifts ?? [DAY, NIGHT], time_records: o.records ?? [], compensation: [comp(o.comp)], holidays: o.holidays ?? [], overtime_requests: o.ot ?? [], correction_requests: [], payroll_periods: [],
     payroll_settings: { ...DEFAULT_SETTINGS, sss_basis: "monthly_rate", ...o.settings }, employee_payroll_settings: o.overrides ?? [], pay_items: o.items ?? [], pay_item_types: o.types ?? [],
     leave_types: o.leaveTypes ?? [], leave_requests: o.leave ?? [], leave_adjustments: [], payroll_openings: o.openings ?? [],
+    clients: [], shift_assignments: o.assignments ?? [], schedule_settings: { horizon_days: 60, short_notice_hours: 48 }, approval_settings: { approver_roles: ["hr"] }, notifications: [],
   };
 }
 const P = (date: string): PayrollPeriod => ({ ...periodFor(date), status: "open", finalized_at: null, finalized_by: null });
@@ -145,6 +146,24 @@ test("undertime can't be offset by overtime on another day (Art. 88)", () => {
 test("rest-day work: first 8 hours at 130%, the rest at 169%", () => {
   const records = [...present(A0, A1), ...rec("2026-11-07", "08:00", "18:00")]; // Saturday
   const s = slip(db({ records, ot: [ot("2026-11-07", "08:00", "18:00")] }), A0);
+  near(line(s.earnings, "ot-"), 480 * MIN * 1.3 + 120 * MIN * 1.69);
+});
+
+// ---- Schedule ----------------------------------------------------------------
+
+const assign = (date: string, shift: string | null): ShiftAssignment => ({ id: `e1:${date}`, organization_id: "o", employee_id: "e1", work_date: date, shift_code_id: shift, covers_employee_id: null, note: null, assigned_by: "ops", assigned_at: NOW });
+
+test("rotating rest day: a scheduled Saturday is an ordinary day and the weekday off isn't an absence", () => {
+  const records = [...present(A0, A1, ["2026-11-04"]), ...rec("2026-11-07", "08:58", "18:00")];
+  const s = slip(db({ records, assignments: [assign("2026-11-04", null), assign("2026-11-07", "s-day")] }), A0);
+  assert.equal(line(s.deductions, "absent"), 0);
+  assert.equal(line(s.earnings, "ot-"), 0);
+  near(s.gross, 15000);
+});
+
+test("work on a scheduled weekday rest day earns the rest day premium (Art. 93)", () => {
+  const records = [...present(A0, A1, ["2026-11-04"]), ...rec("2026-11-04", "08:00", "18:00"), ...rec("2026-11-07", "08:58", "18:00")];
+  const s = slip(db({ records, ot: [ot("2026-11-04", "08:00", "18:00")], assignments: [assign("2026-11-04", null), assign("2026-11-07", "s-day")] }), A0);
   near(line(s.earnings, "ot-"), 480 * MIN * 1.3 + 120 * MIN * 1.69);
 });
 
