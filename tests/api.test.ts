@@ -161,7 +161,9 @@ test("Idempotency-Key: a retry returns the first response and does the work once
   assert.equal(b.body.id, a.body.id);
   assert.equal(b.headers.get("idempotent-replayed"), "true");
   const c = await call("POST", "/time-records", { token: device, body });
-  assert.equal(c.status, 409, "without the key, the duplicate time in is refused");
+  assert.equal(c.status, 200, "without the key, the same punch is recognized and not saved twice");
+  assert.equal(c.body.id, a.body.id);
+  assert.equal(c.body.duplicate, true);
 });
 
 test("API keys: revoked keys fail; keys can't decide requests or finalize payroll", async () => {
@@ -325,6 +327,28 @@ test("approvers: the direct supervisor, plus the roles the organization turns on
   const ok = await call("POST", `/leave-requests/${filed.body.id}/decision`, { as: "e40", body: { approve: true } });
   assert.equal(ok.status, 200);
   assert.equal(ok.body.decided_by, "e40");
+});
+
+test("punches: same punch from two devices once; forgot to time out yesterday is flagged and the person is told", async (t) => {
+  const device = apiKey(["time:write"]);
+  const body = { photo_path: "p/3.jpg", latitude: 14.55, longitude: 121.02, accuracy_m: 8, employee_id: "e34" };
+  const ago = (h: number, plusSec = 0) => new Date(Date.now() - h * 3600000 + plusSec * 1000).toISOString();
+  const first = await call("POST", "/time-records", { token: device, body: { ...body, kind: "clock_in", recorded_at: ago(26) } });
+  if (first.status === 409) return t.skip("yesterday falls in the finalized period today"); // only on the 1st and 16th
+  assert.equal(first.status, 201, JSON.stringify(first.body));
+
+  const kiosk = await call("POST", "/time-records", { token: apiKey(["time:write"]), body: { ...body, kind: "clock_in", recorded_at: ago(26, 40) } });
+  assert.equal(kiosk.status, 200, "a second device, 40 seconds later");
+  assert.equal(kiosk.body.id, first.body.id);
+  const soon = await call("POST", "/time-records", { token: device, body: { ...body, kind: "clock_out", recorded_at: ago(26, 30) } });
+  assert.equal(soon.status, 409, "time out 30 seconds after time in");
+
+  const next = await call("POST", "/time-records", { token: device, body: { ...body, kind: "clock_in", recorded_at: ago(1) } });
+  assert.equal(next.status, 201);
+  assert.notEqual(next.body.work_date, first.body.work_date);
+  assert.equal(next.body.unclosed_work_date, first.body.work_date);
+  const inbox = await call("GET", "/notifications", { as: "e34" });
+  assert.ok(inbox.body.data.some((x: { kind: string; link: string }) => x.kind === "missing_time_out" && x.link.endsWith(first.body.work_date)));
 });
 
 test("payslips: employees get their issued payslips; the open period only on request, as an estimate", async () => {

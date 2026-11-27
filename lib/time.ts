@@ -1,3 +1,4 @@
+import { sessionsOf, type Session } from "./sessions";
 import type { ShiftCode, ShiftKind, TimeRecord } from "./types";
 
 export const ORG_TZ = "Asia/Manila";
@@ -111,42 +112,46 @@ export type DayStatus = "rest_day" | "upcoming" | "not_in" | "absent" | "working
 
 export interface DaySummary {
   status: DayStatus;
-  clockIn: TimeRecord | undefined;
-  clockOut: TimeRecord | undefined;
+  clockIn: TimeRecord | undefined; // first time in
+  clockOut: TimeRecord | undefined; // last time out, once the day is closed
+  sessions: Session[]; // every in-out pair, oldest first
   lateMinutes: number; // 0 when on time or within grace
   undertimeMinutes: number;
   workedMinutes: number;
   records: TimeRecord[];
 }
 
-/** Records for one employee on one work date, summarized against their shift. */
+/** Records for one employee on one work date, summarized against their shift. Several in-out sessions are allowed. */
 export function summarizeDay(records: TimeRecord[], shift: ShiftCode | undefined, date: string, nowIso: string, onLeave = false, restDay = isWeekend(date)): DaySummary {
   const sorted = [...records].sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
-  // An approved correction overrides the device record of the same kind; originals are never edited.
-  const latestCorrection = (k: TimeRecord["kind"]) => [...sorted].reverse().find((r) => r.kind === k && r.source === "correction");
-  const clockIn = latestCorrection("clock_in") ?? sorted.find((r) => r.kind === "clock_in");
-  const clockOut = latestCorrection("clock_out") ?? [...sorted].reverse().find((r) => r.kind === "clock_out");
-  const base = { clockIn, clockOut, records: sorted, lateMinutes: 0, undertimeMinutes: 0, workedMinutes: 0 };
+  const d = sessionsOf(sorted);
+  const clockIn = d.first;
+  const clockOut = d.open ? undefined : d.last;
+  const base = { clockIn, clockOut, sessions: d.sessions, records: sorted, lateMinutes: 0, undertimeMinutes: 0, workedMinutes: 0 };
   if (onLeave) return { ...base, status: "on_leave" };
   if (!shift) return { ...base, status: clockIn ? (clockOut ? "done" : "working") : "no_shift" };
 
   const startIso = localToIso(date, shift.start_time, shift.timezone);
-  const endIso = new Date(Date.parse(startIso) + spanMinutes(shift) * 60000).toISOString();
+  const endMs = Date.parse(startIso) + spanMinutes(shift) * 60000;
   const now = Date.parse(nowIso);
 
   if (!clockIn) {
     if (restDay) return { ...base, status: "rest_day" };
     if (now < Date.parse(startIso)) return { ...base, status: "upcoming" };
-    return { ...base, status: now > Date.parse(endIso) ? "absent" : "not_in" };
+    return { ...base, status: now > endMs ? "absent" : "not_in" };
   }
 
   const late = Math.round((Date.parse(clockIn.recorded_at) - Date.parse(startIso)) / 60000);
   const lateMinutes = late > shift.grace_minutes ? late : 0;
-  const outAt = clockOut ? Date.parse(clockOut.recorded_at) : Math.min(now, Date.parse(endIso));
-  const gross = Math.max(0, (outAt - Date.parse(clockIn.recorded_at)) / 60000);
-  const workedMinutes = Math.max(0, gross - (gross > 5 * 60 ? shift.break_minutes : 0));
-  const undertimeMinutes = clockOut ? Math.max(0, Math.round((Date.parse(endIso) - Date.parse(clockOut.recorded_at)) / 60000)) : 0;
-  const status: DayStatus = clockOut ? "done" : now > Date.parse(endIso) + 2 * 3600_000 ? "missing_out" : "working";
+  // The open session runs to now (or the shift end) while the shift is on; after that it isn't counted.
+  const stale = d.open && now > endMs + 2 * 3600_000;
+  const spans = d.sessions.map((x) => [Date.parse(x.in.recorded_at), x.out ? Date.parse(x.out.recorded_at) : stale ? Date.parse(x.in.recorded_at) : Math.min(now, endMs)] as const);
+  const gross = spans.reduce((n, [x, y]) => n + Math.max(0, y - x), 0) / 60000;
+  let away = 0;
+  for (let i = 1; i < spans.length; i++) away += Math.max(0, spans[i][0] - spans[i - 1][1]) / 60000;
+  const workedMinutes = Math.max(0, gross - (gross > 5 * 60 ? Math.max(0, shift.break_minutes - away) : 0));
+  const undertimeMinutes = clockOut ? Math.max(0, Math.round((endMs - Date.parse(clockOut.recorded_at)) / 60000)) : 0;
+  const status: DayStatus = clockOut ? "done" : stale ? "missing_out" : "working";
   return { ...base, status, lateMinutes, undertimeMinutes, workedMinutes };
 }
 

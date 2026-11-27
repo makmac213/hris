@@ -290,14 +290,18 @@ export function coverageGaps(db: Database, people: Employee[], dates: string[], 
  * The work date a time record belongs to. Overnight shifts belong to the day they started: a 2 AM time out
  * on a 10 PM shift counts for the day before, when that day's shift was overnight and has an open record.
  */
-export function workDateFor(db: Database, emp: Pick<Employee, "id" | "shift_code_id">, iso: string): string {
+export function workDateFor(db: Database, emp: Pick<Employee, "id" | "shift_code_id">, iso: string, kind?: "clock_in" | "clock_out"): string {
   const base = db.shift_codes.find((s) => s.id === emp.shift_code_id);
   const z0 = zoned(iso, base?.timezone);
   const prev = addDays(z0.date, -1);
   const shift = scheduleFor(db, emp, prev).shift;
   if (shift && shift.end_time <= shift.start_time) {
     const [eh, em] = shift.end_time.split(":").map(Number);
-    if (z0.minutes < eh * 60 + em + 4 * 60 && db.time_records.some((r) => r.employee_id === emp.id && r.work_date === prev)) return prev;
+    const end = eh * 60 + em;
+    // A time out up to 4 hours after an overnight shift ends belongs to the night it started.
+    // A time in does only while that shift is still running (back from a break), so a new day's time in starts a new day.
+    const limit = kind === "clock_in" ? end : end + 4 * 60;
+    if (z0.minutes < limit && db.time_records.some((r) => r.employee_id === emp.id && r.work_date === prev)) return prev;
   }
   return z0.date;
 }

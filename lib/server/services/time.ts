@@ -1,6 +1,9 @@
 import { z } from "zod";
 import type { Database, Employee, TimeRecord } from "@/lib/types";
-import { scheduleFor, workDateFor } from "@/lib/schedule";
+import { workDateFor } from "@/lib/schedule";
+import { checkPunch, missingOutNotice } from "@/lib/punch";
+import { formatInstant } from "@/lib/time";
+import { formatDate } from "@/lib/format";
 import { type Ctx, canSee, isPrivileged, requireScope, selfId } from "../context";
 import { conflict, forbidden, invalid, notFound } from "../errors";
 import { isoDate, isoInstant, listQuery, paginate, parse } from "../validate";
@@ -43,20 +46,21 @@ export async function createTimeRecord(ctx: Ctx, body: unknown) {
   if (emp.status === "offboarded") throw conflict("This person no longer works here.");
   if (!emp.shift_code_id) throw conflict("No shift code assigned. HR assigns one before time can be recorded.");
   const at = input.recorded_at ?? ctx.now;
-  if (Date.parse(at) > Date.parse(ctx.now) + 2 * 60000) throw invalid({ recorded_at: "That time hasn't happened yet." });
-  const workDate = workDateFor(db, emp, at);
-  if (db.payroll_periods.some((p) => p.status !== "open" && workDate >= p.start_date && workDate <= p.end_date)) {
-    throw conflict("Payroll for this date is finalized. File a correction or ask HR for an adjustment.");
+  const tz = db.shift_codes.find((x) => x.id === emp.shift_code_id)?.timezone;
+  // Postgres: record_punch() runs these checks under a per-person lock, so two devices can't both pass (migration 0009).
+  const check = checkPunch(db, emp, input.kind, at, ctx.now, isKey, (iso) => formatInstant(iso, tz));
+  if (!check.ok) {
+    if ("duplicate" in check) return { ...check.duplicate, duplicate: true }; // double tap, retry or a second device: the first punch stands
+    if (check.status === 422) throw invalid({ [check.field]: check.message });
+    throw conflict(check.message);
   }
-  const day = db.time_records.filter((r) => r.employee_id === emp.id && r.work_date === workDate && r.source === "device");
-  const shiftId = scheduleFor(db, emp, workDate).assignment?.shift_code_id ?? emp.shift_code_id;
-  if (input.kind === "clock_in" && day.some((r) => r.kind === "clock_in")) throw conflict("There's already a time in for this day.");
-  if (input.kind === "clock_out" && !day.some((r) => r.kind === "clock_in")) throw conflict("Record a time in first.");
-  if (input.kind === "clock_out" && day.some((r) => r.kind === "clock_out")) throw conflict("There's already a time out for this day. File a correction to change it.");
   const rec: TimeRecord = {
-    id: ctx.repo.newId("tr"), organization_id: ctx.orgId, employee_id: emp.id, shift_code_id: shiftId, kind: input.kind,
-    recorded_at: at, work_date: workDate, source: "device", correction_request_id: null, photo_path: input.photo_path,
+    id: ctx.repo.newId("tr"), organization_id: ctx.orgId, employee_id: emp.id, shift_code_id: check.shiftCodeId, kind: input.kind,
+    recorded_at: at, work_date: check.workDate, source: "device", correction_request_id: null, photo_path: input.photo_path,
     latitude: input.latitude, longitude: input.longitude, accuracy_m: input.accuracy_m, device: input.device ?? (isKey ? `api-key:${ctx.principal.kind === "key" ? ctx.principal.key.prefix : ""}` : null),
   };
-  return ctx.repo.insert("time_records", rec);
+  const saved = await ctx.repo.insert("time_records", rec);
+  const notice = check.unclosed ? missingOutNotice(db, emp, check.unclosed, ctx.now, ctx.repo.newId("ntf"), ctx.orgId, formatDate) : null;
+  if (notice) await ctx.repo.upsert("notifications", [notice]);
+  return { ...saved, unclosed_work_date: check.unclosed };
 }

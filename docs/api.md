@@ -89,7 +89,7 @@ These are the same rules as the web app:
 | `GET /employees/{id}/leave-balances` | Balances for `?year=` | Self, manager, admin, HR |
 | `GET /shift-codes` | Shift codes | Anyone |
 | `GET /time-records` | Filters: `employee_id`, `from`, `to` | Self, manager (team), admin, HR |
-| `POST /time-records` | Clock in or out. Server time, photo path and GPS are required (Record Time rules). | Self; API key with `time:write` |
+| `POST /time-records` | Clock in or out. Server time, photo path and GPS are required (Record Time rules). Time in and out alternate, several pairs a day. The same punch again within 2 minutes returns the original with `200` and `"duplicate": true`. Returns `unclosed_work_date` when an earlier day has no time out. See [time-punches.md](time-punches.md). | Self; API key with `time:write` |
 | `GET /overtime-requests` | Filters: `employee_id`, `status` | Self, approver |
 | `POST /overtime-requests` | File overtime | Self |
 | `POST /overtime-requests/{id}/decision` | `{ "approve": true }` or `{ "approve": false, "note": "…" }` | Approver, never self |

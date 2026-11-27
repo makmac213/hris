@@ -1,7 +1,9 @@
 "use client";
 
 import { approverText } from "@/lib/approvals";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { unclosedDays } from "@/lib/punch";
 import { today as todayIso, useCurrentUser, useDb, workDateFor } from "@/lib/store";
 import { cellFor, datesFrom, scheduleFor } from "@/lib/schedule";
 import { displayName, formatDate } from "@/lib/format";
@@ -23,6 +25,9 @@ export function MyTimeView() {
   const [justRecorded, setJustRecorded] = useState<TimeRecord | null>(null);
   const [filing, setFiling] = useState<null | { type: "ot"; date?: string } | { type: "fix"; date?: string; kind?: CorrectionKind }>(null);
   const [filedNote, setFiledNote] = useState("");
+  const fixParam = useSearchParams().get("fix");
+  // From the "No time out" notification: open the fix for that day.
+  useEffect(() => { if (fixParam && /^\d{4}-\d{2}-\d{2}$/.test(fixParam)) setFiling({ type: "fix", date: fixParam, kind: "missing_out" }); }, [fixParam]);
 
   const shift = db.shift_codes.find((s) => s.id === me.shift_code_id);
   if (!shift) {
@@ -45,7 +50,12 @@ export function MyTimeView() {
   const todayShift = dayOf(workDate);
   const today = summarizeDay(todays, todayShift.shift, workDate, nowIso, false, todayShift.rest);
   const upcoming = datesFrom(workDate, 7).map((d) => cellFor(db, me, d, todayIso()));
-  const nextKind: TimeRecord["kind"] | null = !today.clockIn ? "clock_in" : !today.clockOut ? "clock_out" : null;
+  // Time in and out alternate. After a time out, you can time in again the same day (back from a break, or a time out by mistake).
+  const openNow = today.sessions.length > 0 && !today.sessions[today.sessions.length - 1].out;
+  const nextKind: TimeRecord["kind"] = openNow ? "clock_out" : "clock_in";
+  const again = !openNow && today.sessions.length > 0;
+  // Earlier days timed in and never timed out, without a correction asked for yet.
+  const unclosed = unclosedDays(db, me.id, workDate).filter((d) => !db.correction_requests.some((c) => c.employee_id === me.id && c.work_date === d && c.kind === "missing_out" && c.status !== "rejected" && c.status !== "cancelled"));
 
   const pastDates = Array.from(new Set(mine.map((r) => r.work_date))).filter((d) => d !== workDate).sort().reverse().slice(0, 6);
   const history = pastDates.map((d) => { const x = dayOf(d); return { date: d, s: summarizeDay(mine.filter((r) => r.work_date === d), x.shift, d, nowIso, false, x.rest) }; });
@@ -56,7 +66,7 @@ export function MyTimeView() {
     if (today.status === "not_in") return "You haven’t recorded your time in yet.";
     if (today.status === "working") return `Timed in at ${formatInstant(today.clockIn!.recorded_at, shift.timezone)}${today.lateMinutes ? `, ${formatDuration(today.lateMinutes)} late` : ""}.`;
     if (today.status === "missing_out") return "You didn’t record your time out. Record it now or tell HR.";
-    if (today.status === "done") return `Done for today. ${formatDuration(today.workedMinutes)} worked${today.undertimeMinutes ? `, timed out ${formatDuration(today.undertimeMinutes)} early` : ""}.`;
+    if (today.status === "done") return `Timed out at ${formatInstant(today.clockOut!.recorded_at, shift.timezone)}. ${formatDuration(today.workedMinutes)} worked${today.undertimeMinutes ? `, ${formatDuration(today.undertimeMinutes)} before your shift ends` : ""}.`;
     return "";
   })();
 
@@ -83,6 +93,16 @@ export function MyTimeView() {
         </div>
       )}
 
+      {unclosed.length > 0 && (
+        <div className="callout-warn unclosed" role="alert">
+          <span>
+            <strong>No time out on {unclosed.map((d) => formatDate(d)).join(", ")}.</strong>{" "}
+            That day is unpaid after your time in until a correction is approved. Ask for one with the time you left.
+          </span>
+          <Button size="sm" onClick={() => setFiling({ type: "fix", date: unclosed[0], kind: "missing_out" })}>Request a fix</Button>
+        </div>
+      )}
+
       <section className="clock-card" aria-label="Today">
         <div className="clock-main">
           <p className="clock-date" suppressHydrationWarning>{new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: shift.timezone }).format(now)}</p>
@@ -90,9 +110,9 @@ export function MyTimeView() {
             {new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", timeZone: shift.timezone }).format(now)}
           </p>
           <p className="clock-status">{headline}</p>
-          {nextKind && today.status !== "rest_day" ? (
-            <Button variant="primary" icon="camera" className="btn-lg" onClick={() => setRecording(nextKind)}>
-              Record time {nextKind === "clock_in" ? "in" : "out"}
+          {today.status !== "rest_day" || today.clockIn ? (
+            <Button variant={again ? "secondary" : "primary"} icon="camera" className="btn-lg" onClick={() => setRecording(nextKind)}>
+              {again ? "Time in again" : `Record time ${nextKind === "clock_in" ? "in" : "out"}`}
             </Button>
           ) : null}
           <p className="clock-note muted">Recording takes your photo and location. Both are required.</p>
@@ -115,6 +135,12 @@ export function MyTimeView() {
               </li>
             );
           })}
+          {today.sessions.length > 1 && (
+            <li className="today-sessions">
+              <span className="today-label">{today.sessions.length} sessions</span>
+              <span className="num small">{today.sessions.map((x) => `${formatInstant(x.in.recorded_at, shift.timezone)} to ${x.out ? formatInstant(x.out.recorded_at, shift.timezone) : "now"}`).join(", ")}</span>
+            </li>
+          )}
           {today.clockIn && (
             <li className="today-total">
               <span className="today-label">Worked {today.clockOut ? "" : "so far"}</span>

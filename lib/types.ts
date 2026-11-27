@@ -415,7 +415,7 @@ export interface ApprovalSettings {
   approver_roles: ("hr" | "operations")[];
 }
 
-export type NotificationKind = "leave_approved_on_shift" | "short_notice_leave";
+export type NotificationKind = "leave_approved_on_shift" | "short_notice_leave" | "missing_time_out";
 
 export interface AppNotification {
   id: string;

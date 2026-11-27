@@ -101,13 +101,17 @@ export function RecordTimeDialog({ employee, shift, kind, workDate, onClose, onD
   const early = kind === "clock_out" ? Math.round((shiftEnd - now) / 60000) : 0;
   const verb = kind === "clock_in" ? "time in" : "time out";
 
+  const [saving, setSaving] = useState(false);
   const submit = () => {
+    if (saving) return; // a double tap records once
+    setSaving(true);
     try {
       const rec = recordTime({ employeeId: employee.id, kind, photo: photo!, ...gps.value!, device: deviceLabel() });
       stopCamera();
       onDone(rec);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : "Couldn’t record your time. Try again.");
+      setSaving(false);
     }
   };
 
@@ -120,7 +124,7 @@ export function RecordTimeDialog({ employee, shift, kind, workDate, onClose, onD
         <>
           {!ready && <span className="foot-hint">{!photo ? "Take a photo to continue." : "Waiting for your location."}</span>}
           <Button variant="ghost" onClick={() => { stopCamera(); onClose(); }}>Cancel</Button>
-          <Button variant="primary" disabled={!ready} onClick={submit}>Record {verb}</Button>
+          <Button variant="primary" disabled={!ready || saving} onClick={submit}>Record {verb}</Button>
         </>
       }
     >

@@ -4,8 +4,11 @@
 // so moving to Supabase means re-implementing these functions with supabase-js queries
 // (and React Query / server actions) without touching the views.
 
+import { checkPunch, missingOutNotice } from "./punch";
 import { issuePayslips } from "./payslips";
 import { useSyncExternalStore } from "react";
+import { formatInstant } from "./time";
+import { formatDate } from "./format";
 import type { ApprovalSettings, Client, Department, Location, ScheduleSettings, LeaveAdjustment, LeaveRequest, LeaveType, SeparationReason, AppRole, Compensation, CorrectionKind, CorrectionRequest, Database, Employee, EmployeePayrollSettings, OnboardingCase, OnboardingTask, OvertimeRequest, PayItem, PayItemType, PayrollSettings, ShiftCode, TimeRecord } from "./types";
 import { type AssignmentInput, assignmentId, checkAssignments, leaveNotifications, lockReason, scheduleFor, toAssignments, workDateFor as workDateForDb } from "./schedule";
 import { buildOnboardingTasks, ORG_ID, seed, TEMPLATE_ID, TODAY } from "./mock-data";
@@ -244,14 +247,20 @@ export function recordTime(c: TimeCapture): TimeRecord {
   }
   const emp = db.employees.find((e) => e.id === c.employeeId)!;
   const nowIso = new Date().toISOString();
+  const tz = db.shift_codes.find((s) => s.id === emp.shift_code_id)?.timezone;
+  const check = checkPunch(db, emp, c.kind, nowIso, nowIso, false, (iso) => formatInstant(iso, tz));
+  if (!check.ok) {
+    if ("duplicate" in check) return check.duplicate; // a double tap: the first one stands
+    throw new Error(check.message);
+  }
   const rec: TimeRecord = {
     id: `tr-${c.employeeId}-${Date.now().toString(36)}`,
     organization_id: ORG_ID,
     employee_id: c.employeeId,
-    shift_code_id: scheduleFor(db, emp, workDateForDb(db, emp, nowIso)).assignment?.shift_code_id ?? emp.shift_code_id,
+    shift_code_id: check.shiftCodeId,
     kind: c.kind,
     recorded_at: nowIso,
-    work_date: workDateFor(emp, nowIso),
+    work_date: check.workDate,
     source: "device",
     correction_request_id: null,
     photo_path: c.photo,
@@ -260,7 +269,8 @@ export function recordTime(c: TimeCapture): TimeRecord {
     accuracy_m: c.accuracy_m,
     device: c.device,
   };
-  commit({ ...db, time_records: [...db.time_records, rec] });
+  const notice = check.unclosed ? missingOutNotice(db, emp, check.unclosed, nowIso, uid("ntf"), ORG_ID, formatDate) : null;
+  commit({ ...db, time_records: [...db.time_records, rec], notifications: notice ? [notice, ...db.notifications] : db.notifications });
   return rec;
 }
 
