@@ -642,3 +642,144 @@ a.nav-link:hover { background: var(--bg-hover); color: var(--ink); }
 .callout-warn { padding: var(--s3) var(--s4); border-radius: var(--r); background: var(--warn-bg); color: var(--warn-ink); }
 .table-wrap:has(.row-menu-list) { overflow: visible; }
 .record-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 260px)); }
+.proof-corrected { display: inline-grid; place-items: center; background: var(--bg-sunken); color: var(--ink-3); border: 1px dashed var(--line-strong); }
+
+/* ---- Requests and approvals --------------------------------------------- */
+
+.section-head { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); flex-wrap: wrap; margin-bottom: var(--s3); }
+.section-head h2 { margin: 0; }
+.field textarea, .reject-box textarea {
+  width: 100%; padding: var(--s2) var(--s3); border-radius: var(--r); border: 1px solid var(--line-strong);
+  background: var(--bg); font-size: 16px; resize: vertical; min-height: 72px;
+}
+@media (min-width: 861px) { .field textarea, .reject-box textarea { font-size: 14px; } }
+.field textarea:focus, .reject-box textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+.req-list { border: 1px solid var(--line); border-radius: var(--r); }
+.req { display: flex; justify-content: space-between; gap: var(--s4); padding: var(--s3) var(--s4); flex-wrap: wrap; }
+.req + .req { border-top: 1px solid var(--line); }
+.req-main { display: flex; flex-direction: column; gap: 2px; flex: 1 1 320px; }
+.req-main strong { font-weight: 500; }
+.req-side { display: flex; align-items: center; gap: var(--s2); }
+
+.approvals { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s4); }
+.approval { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s4) var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+.approval-head { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.approval-kind { font-size: 13px; color: var(--ink-2); font-weight: 500; }
+.approval-body { display: flex; flex-direction: column; gap: var(--s1); }
+.approval-what { font-size: 15px; }
+.approval-reason { color: var(--ink-2); border-left: 2px solid var(--line-strong); padding-left: var(--s3); }
+.evidence-row { display: inline-flex; align-items: center; gap: var(--s2); font-size: 13px; }
+.approval-actions { display: flex; justify-content: flex-end; gap: var(--s2); align-items: center; }
+.approval-actions.decided { justify-content: flex-start; }
+.reject-box { display: flex; flex-direction: column; gap: 6px; }
+.reject-box label { font-weight: 500; }
+.btn-danger { background: var(--danger); }
+.btn-danger:hover { background: var(--danger); filter: brightness(0.92); }
+.st .num { margin-left: 6px; color: var(--ink-3); }
+
+/* ---- Payroll ------------------------------------------------------------ */
+
+.page-xl { max-width: 1280px; }
+.finalize { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; }
+.small { font-size: 13px; }
+.st-tag { margin-left: 8px; font-size: 12px; padding: 1px 6px; border-radius: 4px; background: var(--bg-sunken); color: var(--ink-2); }
+.st-open { background: var(--accent-weak); color: var(--accent-text); }
+.st-paid { background: var(--ok-bg); color: var(--ok-ink); }
+.pay-summary {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--s5); align-items: center;
+  margin: var(--s5) 0 var(--s4); padding: var(--s5); border: 1px solid var(--line); border-radius: var(--r);
+}
+@media (max-width: 860px) { .pay-summary { grid-template-columns: minmax(0, 1fr); } }
+.pay-hero { display: flex; flex-direction: column; gap: 4px; }
+.pay-hero strong { font-size: clamp(28px, 4vw, 36px); font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+.pay-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s3) var(--s5); }
+.pay-facts dt { font-size: 13px; color: var(--ink-2); }
+.pay-facts dd { font-weight: 500; }
+.checks { display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s2); }
+.check { display: flex; align-items: flex-start; gap: var(--s2); color: var(--ink-2); margin-bottom: var(--s2); }
+.check svg { flex: none; margin-top: 1px; }
+.check-ok svg { color: var(--ok-ink); }
+.check-warn svg { color: var(--warn-ink); }
+.check-danger { color: var(--danger); }
+.table th.r, .table td.r { text-align: right; }
+.table td.neg, .amount.neg { color: var(--danger); }
+.table td.strong { font-weight: 600; }
+.register tfoot td { font-weight: 600; background: var(--bg-subtle); border-top: 1px solid var(--line-strong); padding: var(--s3) var(--s4); }
+.rules { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3) var(--s4); }
+.rules summary, .days summary { cursor: pointer; font-weight: 500; min-height: 32px; display: flex; align-items: center; }
+.rules ul { list-style: disc; padding-left: var(--s5); display: flex; flex-direction: column; gap: var(--s2); margin: var(--s3) 0; color: var(--ink-2); }
+
+.payslip { display: flex; flex-direction: column; gap: var(--s4); }
+.payslip-net { display: flex; flex-direction: column; gap: 2px; }
+.payslip-net strong { font-size: 32px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
+.callout-info { padding: var(--s3) var(--s4); border-radius: var(--r); background: var(--accent-weak); color: var(--ink); }
+.flags { list-style: none; display: flex; flex-direction: column; gap: var(--s2); }
+.flags li { padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--warn-bg); color: var(--warn-ink); }
+.pay-table { border: 1px solid var(--line); border-radius: var(--r); border-collapse: separate; border-spacing: 0; overflow: hidden; }
+.pay-table td { padding: var(--s2) var(--s4); }
+.pay-table .amount { text-align: right; white-space: nowrap; vertical-align: top; }
+.pay-group th { background: var(--bg-subtle); font-size: 13px; color: var(--ink-2); height: 32px; text-align: left; }
+.pay-subtotal td { font-weight: 600; border-top: 1px solid var(--line-strong); }
+.pay-total td { font-weight: 600; font-size: 16px; background: var(--bg-subtle); border-top: 1px solid var(--line-strong); }
+.days { border-top: 1px solid var(--line); padding-top: var(--s3); }
+.days .table { margin-top: var(--s3); }
+
+.pay-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: var(--s5); align-items: start; }
+@media (max-width: 860px) { .pay-layout { grid-template-columns: minmax(0, 1fr); } }
+.pay-periods { display: flex; flex-direction: column; gap: 4px; }
+.pay-period { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: var(--s3); border: 1px solid transparent; border-radius: var(--r); background: none; text-align: left; transition: background var(--t-fast); }
+.pay-period:hover { background: var(--bg-hover); }
+.pay-period-on { border-color: var(--line); background: var(--bg-subtle); }
+.pay-period span:first-child { font-weight: 500; }
+
+/* ---- Payroll settings and pay items ---- */
+.settings-form { gap: var(--s4) var(--s4); }
+.settings-h { font-size: 14px; font-weight: 600; margin: var(--s2) 0 0; padding-top: var(--s3); border-top: 1px solid var(--line); }
+.settings-h:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+.toggle-row label { display: flex; align-items: center; gap: var(--s2); cursor: pointer; min-height: 32px; }
+.toggle-row input { width: 16px; height: 16px; accent-color: var(--accent); }
+.toggle-row .field-hint { margin-left: 24px; }
+.pay-items { display: grid; gap: 0; }
+.pay-item { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: var(--s3) 0; border-top: 1px solid var(--line); }
+.pay-item:first-child { border-top: 0; }
+.pay-item .cell-2 { min-width: 0; }
+.pay-item-amt { white-space: nowrap; }
+.pay-item-ended { opacity: 0.6; }
+.head-actions:has(.finalize) { align-items: flex-start; }
+.dl-wide > div { grid-template-columns: 12rem minmax(0, 1fr); }
+@media (max-width: 640px) { .dl-wide > div { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+.pay-item-side { display: flex; align-items: center; gap: var(--s2); }
+.panel-head + .dl, .panel-head + .pay-items, .panel-head + p { margin-top: var(--s3); }
+.register th, .register td, .register tfoot td { padding-left: var(--s3); padding-right: var(--s3); white-space: nowrap; }
+.register td:first-child, .register th:first-child { white-space: normal; }
+.row-muted td { color: var(--ink-2); }
+.treatment-hint { margin-top: calc(var(--s2) * -1); }
+.sub-h { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: var(--s4) 0 var(--s1); }
+
+/* ---- Leave, employment terms, final pay, year-end ---- */
+.cell-sub { display: block; font-size: 13px; color: var(--ink-2); font-weight: 400; }
+.toggle-inline { display: flex; gap: var(--s2); align-items: center; }
+.region-table-wrap { max-height: 280px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r); }
+.region-table th { position: sticky; top: 0; background: var(--bg-subtle); }
+.region-table td, .region-table th { padding: var(--s2) var(--s3); font-size: 14px; }
+.event-leaves { list-style: none; margin: var(--s3) 0 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r); }
+.event-leave { display: flex; justify-content: space-between; align-items: center; gap: var(--s4); padding: var(--s3) var(--s4); }
+.event-leave + .event-leave { border-top: 1px solid var(--line); }
+.event-leave p { margin: 2px 0 0; }
+.terms { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s4) var(--s6); margin: var(--s3) 0 var(--s4); }
+.terms dt { font-size: 13px; color: var(--ink-2); }
+.terms dd { margin: 2px 0 0; }
+.alerts { display: grid; gap: var(--s2); margin: var(--s3) 0; }
+.fp-table td.num, .fp-table th.num { white-space: nowrap; }
+.fp-total td { font-weight: 600; border-top: 1px solid var(--line-strong); font-size: 16px; }
+.checks-list { list-style: none; padding: 0; margin: var(--s3) 0 0; display: grid; gap: var(--s2); }
+.checks-list li { display: flex; gap: var(--s2); align-items: flex-start; }
+.checks-list .ok { color: var(--ok-ink); }
+.checks-list .bad { color: var(--warn-ink); }
+.deadlines { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s3); margin: var(--s3) 0; }
+.deadline { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3) var(--s4); }
+.deadline strong { display: block; }
+.deadline .num { font-size: 15px; }
+.text-ok { color: var(--ok-ink); }
+.leave-facts { list-style: none; padding: 0; margin: var(--s1) 0 0; display: grid; gap: 2px; font-size: 14px; }
+.event-leave .btn { flex-shrink: 0; }

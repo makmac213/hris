@@ -7,7 +7,7 @@ import { displayName, formatDate } from "@/lib/format";
 import { formatDuration, formatInstant, summarizeDay, zoned, type DaySummary } from "@/lib/time";
 import type { Employee, ShiftCode } from "@/lib/types";
 import { Dialog, EmptyState, Button, PersonCell } from "@/components/ui";
-import { DayStatusBadge, ProofPhoto, ShiftSummary, formatCoords, mapsUrl, useNow } from "./shared";
+import { DayStatusBadge, ProofPhoto, RecordWhere, ShiftSummary, useNow } from "./shared";
 
 type Filter = "all" | "late" | "missing" | "no_out";
 interface Row { e: Employee; shift: ShiftCode | undefined; s: DaySummary }
@@ -159,8 +159,8 @@ function RecordDetail({ row, date, onClose }: { row: Row; date: string; onClose:
             <ProofPhoto path={r.photo_path} size={200} alt={`Photo taken at ${r.kind === "clock_in" ? "time in" : "time out"}`} />
             <figcaption>
               <strong>Time {r.kind === "clock_in" ? "in" : "out"} · <span className="num">{formatInstant(r.recorded_at, tz)}</span></strong>
-              <a className="link num" href={mapsUrl(r.latitude, r.longitude)} target="_blank" rel="noreferrer">{formatCoords(r.latitude, r.longitude)}</a>
-              <span className="muted">Accurate to {r.accuracy_m} m{r.device && ` · ${r.device}`}</span>
+              <RecordWhere r={r} />
+              {r.source === "device" && <span className="muted">Accurate to {r.accuracy_m} m{r.device && ` · ${r.device}`}</span>}
             </figcaption>
           </figure>
         ))}
