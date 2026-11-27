@@ -6,9 +6,10 @@ import { caseSummary, directReports, indexById, reportingChain, today, updateEmp
 import { shiftHours } from "@/lib/time";
 import { displayName, employmentTypeLabel, formatBytes, formatDate, legalName, statusLabel, tenure } from "@/lib/format";
 import type { Employee, EmploymentStatus } from "@/lib/types";
+import { PayTab } from "./PayTab";
 import { Avatar, Button, Dialog, EmptyState, Field, Icon, PersonCell, Progress, StatusBadge } from "@/components/ui";
 
-type Tab = "overview" | "employment" | "documents";
+type Tab = "overview" | "employment" | "documents" | "pay";
 
 const eventLabel: Record<string, string> = {
   hired: "Joined", promotion: "Promoted", transfer: "Left the company", title_change: "Title changed",
@@ -88,7 +89,7 @@ export function ProfileView({ id }: { id: string }) {
       )}
 
       <div className="tabs" role="tablist" aria-label="Profile sections">
-        {(["overview", "employment", "documents"] as Tab[]).filter((t) => t !== "documents" || canSeeDocs).map((t) => (
+        {(["overview", "employment", "documents", "pay"] as Tab[]).filter((t) => (t !== "documents" || canSeeDocs) && (t !== "pay" || canManage)).map((t) => (
           <button
             key={t}
             type="button"
@@ -99,7 +100,7 @@ export function ProfileView({ id }: { id: string }) {
             className={tab === t ? "tab tab-on" : "tab"}
             onClick={() => setTab(t)}
           >
-            {t === "overview" ? "Overview" : t === "employment" ? "Employment history" : `Documents (${docs.length})`}
+            {t === "overview" ? "Overview" : t === "employment" ? "Employment history" : t === "pay" ? "Pay" : `Documents (${docs.length})`}
           </button>
         ))}
       </div>
@@ -190,6 +191,8 @@ export function ProfileView({ id }: { id: string }) {
           </ol>
         </section>
       )}
+
+      {tab === "pay" && canManage && <PayTab employee={e} />}
 
       {tab === "documents" && canSeeDocs && (
         <section className="panel panel-flush" role="tabpanel" id="panel-documents" aria-labelledby="tab-documents">

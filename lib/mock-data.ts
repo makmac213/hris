@@ -19,8 +19,10 @@ import type {
   HolidayKind,
   OvertimeRequest,
   PayrollPeriod,
+  EmployeePayrollSettings,
+  PayItem,
 } from "./types";
-import { periodFor } from "./payroll";
+import { DEFAULT_SETTINGS, periodFor } from "./payroll";
 import { addDays } from "./format";
 import { isWeekend, localToIso, phDefaultCodes, spanMinutes, zoned } from "./time";
 
@@ -377,6 +379,40 @@ const payroll_periods: PayrollPeriod[] = [
   { ...CURRENT_PERIOD, status: "open", finalized_at: null, finalized_by: null },
 ];
 
+// ---- Payroll settings and pay items -------------------------------------------------
+
+const payroll_settings = { ...DEFAULT_SETTINGS };
+
+// Per-employee exceptions: the CEO's contributions are fully paid by the company; Miguel saves extra in Pag-IBIG.
+const employee_payroll_settings: EmployeePayrollSettings[] = [
+  { employee_id: "e02", employer_pays_sss: true, employer_pays_philhealth: true, employer_pays_pagibig: true, pagibig_voluntary: 0 },
+  { employee_id: "e16", employer_pays_sss: null, employer_pays_philhealth: null, employer_pays_pagibig: null, pagibig_voluntary: 800 },
+];
+
+const P0 = PREVIOUS_PERIOD.start_date;
+const P1 = CURRENT_PERIOD.start_date;
+const item = (id: string, employee_id: string, direction: PayItem["direction"], category: PayItem["category"], label: string, amount: number, extra: Partial<PayItem> = {}): PayItem => ({
+  id, employee_id, direction, category, de_minimis_kind: null, label, amount, schedule: "every_cutoff", start_date: "2026-01-01",
+  end_date: null, installments: null, authorization: null, created_by: "e10", created_at: "2026-01-05T09:00:00+08:00", ...extra,
+});
+const pay_items: PayItem[] = [
+  // Rice subsidy for rank-and-file staff: ₱1,250 a cutoff, inside the ₱2,500 a month ceiling.
+  ...["e08", "e13", "e16", "e19", "e21", "e22", "e25", "e29", "e32", "e34", "e37"].map((id) =>
+    item(`pi-rice-${id}`, id, "earning", "de_minimis", "Rice subsidy", 1250, { de_minimis_kind: "rice" })),
+  item("pi-laundry-e29", "e29", "earning", "de_minimis", "Laundry allowance", 250, { de_minimis_kind: "laundry" }), // ₱500 a month: ₱100 over
+  item("pi-uniform-e22", "e22", "earning", "de_minimis", "Uniform allowance", 9000, { de_minimis_kind: "uniform", schedule: "once", start_date: P1 }),
+  item("pi-transpo-e13", "e13", "earning", "taxable_allowance", "Transportation allowance", 1500),
+  item("pi-comm-e21", "e21", "earning", "commission", "Sales commission, October", 6500, { schedule: "once", start_date: P1 }),
+  item("pi-reimb-e08", "e08", "earning", "reimbursement", "Client visit expenses (receipts on file)", 2350, { schedule: "once", start_date: P1 }),
+  item("pi-bonus-e19", "e19", "earning", "other_benefit", "Project completion bonus", 25000, { schedule: "once", start_date: P0 }),
+  item("pi-sssloan-e16", "e16", "deduction", "sss_loan", "SSS salary loan", 1100, { start_date: "2026-06-01", installments: 24 }),
+  item("pi-pagloan-e32", "e32", "deduction", "pagibig_loan", "Pag-IBIG multi-purpose loan", 950, { schedule: "second_cutoff", start_date: "2025-12-16", installments: 24 }),
+  item("pi-loan-e13", "e13", "deduction", "company_loan", "Company laptop loan", 2000, { start_date: "2026-09-01", installments: 12, authorization: "Signed salary deduction authorization, Aug 28, 2026" }),
+  item("pi-ins-e22", "e22", "deduction", "insurance", "HMO dependent premium", 900, { authorization: "HMO enrolment form with deduction consent" }),
+  item("pi-adv-e25", "e25", "deduction", "other_authorized", "Cash advance repayment", 1500, { start_date: P1, installments: 2 }), // no authorization on file yet
+  item("pi-adv-e37", "e37", "deduction", "company_loan", "Emergency cash advance", 3000, { start_date: P1, installments: 2, authorization: "Signed authorization, Nov 14, 2026" }),
+];
+
 export const seed: Database = {
   departments,
   locations,
@@ -393,4 +429,7 @@ export const seed: Database = {
   overtime_requests,
   correction_requests,
   payroll_periods,
+  payroll_settings,
+  employee_payroll_settings,
+  pay_items,
 };

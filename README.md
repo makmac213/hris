@@ -10,6 +10,7 @@ A clickable prototype of the HRIS: employee management, timekeeping and Philippi
 npm install
 npm run dev            # http://localhost:3000
 npm run build          # production build and type check
+npm test               # payroll engine edge-case tests
 npm run preview:build  # builds dist/preview/index.html, a single-file version you can share
 ```
 

@@ -10,6 +10,14 @@ Status: built (PR #2). Rules and sources are in [payroll rules](../payroll-rules
 4. **Premiums** apply for rest days, special days and regular holidays, and night differential for 10 PM to 6 AM. Managerial staff get none of these (Art. 82).
 5. **Contributions** (SSS, PhilHealth, Pag-IBIG) are computed monthly and split across the two cutoffs; **withholding tax** uses the semi-monthly table. Minimum wage earners pay no withholding tax.
 
+## Settings, allowances and deductions
+
+- **Payroll settings** (Payroll page, admin and HR): contribution timing, SSS basis, company-paid shares, daily-rate divisor, unworked special days, manager tardiness, 13th month for managers, minimum wage.
+- **Profile → Pay** (admin and HR): compensation, who pays each employee share, voluntary Pag-IBIG, and pay items. Pay items cover allowances, de minimis benefits, bonuses, commissions, reimbursements, adjustments, SSS and Pag-IBIG loans, company loans, union dues, insurance and loss or damage. Deductions that need a signed authorization aren't taken without one. Items are stopped, never deleted, so past payslips stay explainable.
+- **13th month** is added to the December 1–15 payroll automatically.
+
+The [compliance audit](../payroll-compliance-audit.md) lists each rule, the edge cases tested, and what's still missing.
+
 ## Requests
 
 | Request | Who files | What it does when approved |
@@ -34,6 +42,8 @@ Approvals (`/approvals`): admin and HR see everyone; managers see their direct r
 
 ## Sample data
 
-Compensation is set for the 14 Manila staff (three managerial, one hourly). The seed includes late days, an absence, undertime, a forgotten time out, approved, pending and rejected overtime, approved and pending corrections, a rest-day shift, special-day work and a night shift. The previous period is finalized and paid; the current one is open.
+Compensation is set for the 14 Manila staff (three managerial, one hourly). Pay items include rice subsidies, a laundry allowance over its ceiling, a uniform allowance over its yearly ceiling, a transport allowance, a commission, a reimbursement, a bonus, SSS and Pag-IBIG loans, a company loan, an HMO premium, a cash advance with no authorization on file (so it isn't deducted), and an emergency advance. The CEO's employee shares are paid by the company, and Miguel saves extra in Pag-IBIG. The seed includes late days, an absence, undertime, a forgotten time out, approved, pending and rejected overtime, approved and pending corrections, a rest-day shift, special-day work and a night shift. The previous period is finalized and paid; the current one is open.
 
-Schema: `0003_payroll.sql` (compensation, holidays, overtime_requests, time_correction_requests, payroll_periods, payroll_items, and `time_records.source`).
+Schema: `0003_payroll.sql` (compensation, holidays, overtime_requests, time_correction_requests, payroll_periods, payroll_items, payroll_settings, employee_payroll_settings, pay_items, and `time_records.source`).
+
+Tests: `npm test` runs 44 edge-case tests of the engine (`tests/payroll.test.ts`).

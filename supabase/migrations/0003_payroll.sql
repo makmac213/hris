@@ -124,10 +124,71 @@ create table payroll_items (
   lines               jsonb not null,  -- earnings, deductions, contributions, with their basis text
   days                jsonb not null,  -- the day-by-day calculation used, for audit
   rules_version       text not null,   -- e.g. 'PH-2026.11': which rate tables were applied
+  settings            jsonb not null,  -- payroll_settings and employee overrides in force when finalized
   created_at          timestamptz not null default now(),
   unique (payroll_period_id, employee_id)
 );
 
+-- ---- Company payroll settings and per-employee exceptions -----------------------
+create type contribution_timing as enum ('split', 'first_cutoff', 'second_cutoff');
+create type contribution_basis  as enum ('monthly_rate', 'actual_compensation');
+
+create table payroll_settings (
+  organization_id                 uuid primary key references organizations(id) on delete cascade,
+  workdays_per_year               integer not null default 261 check (workdays_per_year in (261, 313, 365)),
+  minimum_wage_daily              numeric(10,2) not null default 755,
+  minimum_wage_label              text not null default 'NCR, Wage Order No. NCR-28',
+  contribution_timing             contribution_timing not null default 'split',
+  sss_basis                       contribution_basis not null default 'actual_compensation',
+  employer_pays_sss               boolean not null default false,
+  employer_pays_philhealth        boolean not null default false,
+  employer_pays_pagibig           boolean not null default false,
+  pay_unworked_special_days       boolean not null default true,
+  deduct_managerial_tardiness     boolean not null default false,
+  thirteenth_month_for_managerial boolean not null default true,
+  updated_at                      timestamptz not null default now()
+);
+
+-- Null means "use the company setting".
+create table employee_payroll_settings (
+  employee_id              uuid primary key references employees(id) on delete cascade,
+  employer_pays_sss        boolean,
+  employer_pays_philhealth boolean,
+  employer_pays_pagibig    boolean,
+  pagibig_voluntary        numeric(10,2) not null default 0 check (pagibig_voluntary >= 0)
+);
+
+-- ---- Allowances, benefits, loans and other deductions ---------------------------
+create type pay_item_direction as enum ('earning', 'deduction');
+create type pay_item_schedule  as enum ('every_cutoff', 'first_cutoff', 'second_cutoff', 'once');
+
+create table pay_items (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid not null references organizations(id) on delete cascade,
+  employee_id      uuid not null references employees(id) on delete cascade,
+  direction        pay_item_direction not null,
+  category         text not null check (category in (
+                     'taxable_allowance', 'de_minimis', 'other_benefit', 'commission', 'reimbursement', 'adjustment',
+                     'sss_loan', 'pagibig_loan', 'company_loan', 'union_dues', 'insurance', 'loss_damage', 'other_authorized')),
+  de_minimis_kind  text check (de_minimis_kind in ('rice', 'laundry', 'medical_dependents', 'uniform', 'medical_assistance', 'achievement_award', 'christmas_gift', 'cba_incentive', 'ot_meal')),
+  label            text not null,
+  amount           numeric(12,2) not null check (amount > 0),
+  schedule         pay_item_schedule not null default 'every_cutoff',
+  start_date       date not null,
+  end_date         date,
+  installments     integer check (installments > 0),
+  authorization    text,  -- reference to the signed authorization (DO 195-18); required unless the law authorizes it
+  created_by       uuid references employees(id),
+  created_at       timestamptz not null default now(),
+  check ((category = 'de_minimis') = (de_minimis_kind is not null)),
+  check (direction = 'earning' or category in ('sss_loan', 'pagibig_loan') or authorization is not null),
+  check (end_date is null or end_date >= start_date)
+);
+create index pay_items_employee_idx on pay_items (employee_id, start_date);
+
+alter table payroll_settings          enable row level security;
+alter table employee_payroll_settings enable row level security;
+alter table pay_items                 enable row level security;
 alter table compensation             enable row level security;
 alter table holidays                 enable row level security;
 alter table overtime_requests        enable row level security;

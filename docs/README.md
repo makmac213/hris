@@ -9,6 +9,7 @@ All planning and documentation for the project lives here. Start with the roadma
 | [Design system](design-system.md) | Type, colour, shape, spacing and motion |
 | [Design critique](design-critique.md) | Each review against impeccable.style, with the findings and fixes |
 | [Payroll rules](payroll-rules.md) | Philippine labor and tax rules the payroll follows, with sources |
+| [Payroll compliance audit](payroll-compliance-audit.md) | What was checked, what was fixed, company settings, edge cases tested, and what's still missing |
 
 Modules:
 

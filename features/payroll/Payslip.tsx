@@ -9,9 +9,7 @@ const dayTypeLabel: Record<DayCalc["type"], string> = {
 };
 
 export function Payslip({ slip, showEmployer }: { slip: PayslipData; showEmployer: boolean }) {
-  const totalEarn = slip.earnings.reduce((n, l) => n + l.amount, 0);
-  const totalDed = slip.deductions.reduce((n, l) => n + l.amount, 0);
-  const totalContrib = slip.contributions.reduce((n, l) => n + l.amount, 0);
+  const totalContrib = slip.contributions.filter((l) => l.key !== "pagibig-voluntary").reduce((n, l) => n + l.amount, 0);
   const open = slip.period.status === "open";
 
   return (
@@ -37,19 +35,38 @@ export function Payslip({ slip, showEmployer }: { slip: PayslipData; showEmploye
           {slip.earnings.map((l) => <PayRow key={l.key} label={l.label} detail={l.detail} amount={l.amount} />)}
           {slip.deductions.length > 0 && <tr className="pay-group"><th colSpan={2}>Time not worked</th></tr>}
           {slip.deductions.map((l) => <PayRow key={l.key} label={l.label} detail={l.detail} amount={-l.amount} />)}
-          <tr className="pay-subtotal"><td>Gross pay</td><td className="num amount">{peso(totalEarn - totalDed)}</td></tr>
-          <tr className="pay-group"><th colSpan={2}>Government contributions</th></tr>
+          {slip.additions.length > 0 && <tr className="pay-group"><th colSpan={2}>Allowances and benefits</th></tr>}
+          {slip.additions.map((l) => <PayRow key={l.key} label={l.label} detail={l.detail} amount={l.amount} />)}
+          <tr className="pay-subtotal"><td>Gross pay</td><td className="num amount">{peso(slip.gross)}</td></tr>
+          {slip.contributions.length > 0 && <tr className="pay-group"><th colSpan={2}>Government contributions</th></tr>}
           {slip.contributions.map((l) => <PayRow key={l.key} label={l.label} detail={l.detail} amount={-l.amount} />)}
           <tr className="pay-group"><th colSpan={2}>Tax</th></tr>
-          <PayRow label="Withholding tax" detail={slip.mwe ? "Minimum wage earner: exempt" : `Semi-monthly table on ${peso(slip.taxable)} taxable`} amount={-slip.tax} />
+          <PayRow
+            label="Withholding tax"
+            detail={slip.mwe ? (slip.taxable > 0 ? `Minimum wage earner: wage, holiday pay and overtime exempt; ${peso(slip.taxable)} of other pay taxed` : "Minimum wage earner: exempt") : `Semi-monthly table on ${peso(slip.taxable)} taxable`}
+            amount={-slip.tax}
+          />
+          {slip.otherDeductions.length > 0 && <tr className="pay-group"><th colSpan={2}>Loans and other deductions</th></tr>}
+          {slip.otherDeductions.map((l) => <PayRow key={l.key} label={l.label} detail={l.detail} amount={-l.amount} />)}
           <tr className="pay-total"><td>Net pay</td><td className="num amount">{peso(slip.net)}</td></tr>
         </tbody>
       </table>
-      <p className="muted small">Taxable pay is gross pay less your contributions ({peso(totalContrib)}).</p>
-
-      {showEmployer && (
+      <p className="muted small">
+        {slip.mwe ? "Taxable pay is pay other than the minimum wage, holiday pay, overtime and night differential." : <>Taxable pay is gross pay less mandatory contributions ({peso(totalContrib)}) and tax-free items.</>}
+        {slip.nonTaxable > 0 && <> Not taxed: {peso(slip.nonTaxable)} (de minimis within the RR 29-2025 ceilings, benefits within the ₱90,000 yearly limit, reimbursements).</>}
+      </p>
+      {slip.employer.some((l) => l.key.endsWith("-ee-by-er")) && (
         <p className="muted small">
-          Employer share this cutoff: {slip.employer.map((l) => `${l.label} ${peso(l.amount)}`).join(" · ")}.
+          The company pays the employee share of {slip.employer.filter((l) => l.key.endsWith("-ee-by-er")).map((l) => l.label.split(" ")[0]).join(", ")} ({peso(slip.employer.filter((l) => l.key.endsWith("-ee-by-er")).reduce((n, l) => n + l.amount, 0))}). It isn’t deducted, and it counts as taxable pay.
+        </p>
+      )}
+      {slip.deferred.length > 0 && (
+        <p className="muted small">Carried to the next cutoff: {slip.deferred.map((l) => `${l.label} ${peso(l.amount)}`).join(" · ")}.</p>
+      )}
+
+      {showEmployer && slip.employer.length > 0 && (
+        <p className="muted small">
+          Employer cost this cutoff: {slip.employer.map((l) => `${l.label} ${peso(l.amount)}`).join(" · ")}.
         </p>
       )}
 
@@ -73,6 +90,8 @@ export function Payslip({ slip, showEmployer }: { slip: PayslipData; showEmploye
                     d.unapprovedExtraMin > 0 && `${formatDuration(d.unapprovedExtraMin)} outside schedule, not filed`,
                     d.nsdMin > 0 && `Night ${formatDuration(d.nsdMin)}`,
                     d.holidayPaidUnworked && "Paid holiday",
+                    d.specialUnworked && (slip.settings.pay_unworked_special_days ? "Special day off, paid by policy" : "Special day off, unpaid"),
+                    d.type === "regular" && !d.holidayPaidUnworked && !d.workedMin && !d.future && !slip.comp.is_managerial && "Holiday unpaid: absent the workday before",
                   ].filter(Boolean).join(" · ") || <span className="muted">—</span>}
                 </td>
               </tr>

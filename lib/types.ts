@@ -197,6 +197,70 @@ export interface OnboardingTask {
   position: number;
 }
 
+// ---- Payroll settings, other earnings and deductions --------------------------------
+
+export type ContributionTiming = "split" | "first_cutoff" | "second_cutoff";
+export type ContributionBasis = "monthly_rate" | "actual_compensation";
+
+// Company-wide payroll policy. One row per organization.
+export interface PayrollSettings {
+  workdays_per_year: 261 | 313 | 365; // divisor for the daily rate of monthly-paid staff
+  minimum_wage_daily: number;
+  minimum_wage_label: string; // e.g. "NCR, Wage Order NCR-28"
+  contribution_timing: ContributionTiming; // when the month's SSS, PhilHealth and Pag-IBIG are deducted
+  sss_basis: ContributionBasis; // SSS: monthly rate, or the month's actual compensation (trued up on the 2nd cutoff)
+  employer_pays_sss: boolean; // the company shoulders the employee share too
+  employer_pays_philhealth: boolean;
+  employer_pays_pagibig: boolean;
+  pay_unworked_special_days: boolean; // "no work, no pay" unless company policy pays them
+  deduct_managerial_tardiness: boolean; // managerial staff are outside the hours-of-work rules (Art. 82)
+  thirteenth_month_for_managerial: boolean; // PD 851 covers rank-and-file; paying managers is company policy
+}
+
+// Per-employee exceptions. Null means "use the company setting".
+export interface EmployeePayrollSettings {
+  employee_id: string;
+  employer_pays_sss: boolean | null;
+  employer_pays_philhealth: boolean | null;
+  employer_pays_pagibig: boolean | null;
+  pagibig_voluntary: number; // extra employee Pag-IBIG per month, above the mandatory share (after tax)
+}
+
+export type EarningCategory =
+  | "taxable_allowance" // transport, communication, etc. not liquidated: taxable
+  | "de_minimis" // tax-free up to the RR 29-2025 ceilings; excess goes to the ₱90,000 pool
+  | "other_benefit" // bonuses and other benefits: tax-free up to ₱90,000 a year with 13th month
+  | "commission" // taxable
+  | "reimbursement" // liquidated expenses: not compensation, not taxed
+  | "adjustment"; // corrections from earlier periods: taxable
+export type DeMinimisKind = "rice" | "laundry" | "medical_dependents" | "uniform" | "medical_assistance" | "achievement_award" | "christmas_gift" | "cba_incentive" | "ot_meal";
+export type DeductionCategory =
+  | "sss_loan" // authorized by law (Art. 113)
+  | "pagibig_loan" // authorized by law
+  | "company_loan" // needs the employee's written authorization (DO 195-18)
+  | "union_dues" // check-off authorization; excluded from taxable pay
+  | "insurance" // premium advanced by the employer, with consent
+  | "loss_damage" // Arts. 114–115: proven, heard, ≤ 20% of wages a week
+  | "other_authorized";
+export type PayItemSchedule = "every_cutoff" | "first_cutoff" | "second_cutoff" | "once";
+
+export interface PayItem {
+  id: string;
+  employee_id: string;
+  direction: "earning" | "deduction";
+  category: EarningCategory | DeductionCategory;
+  de_minimis_kind: DeMinimisKind | null;
+  label: string;
+  amount: number; // per cutoff it applies to
+  schedule: PayItemSchedule;
+  start_date: string; // first period whose end_date ≥ this
+  end_date: string | null;
+  installments: number | null; // loans: stop after this many deductions
+  authorization: string | null; // reference to the signed authorization, where the law needs one
+  created_by: string;
+  created_at: string;
+}
+
 export interface Database {
   departments: Department[];
   locations: Location[];
@@ -213,4 +277,7 @@ export interface Database {
   overtime_requests: OvertimeRequest[];
   correction_requests: CorrectionRequest[];
   payroll_periods: PayrollPeriod[];
+  payroll_settings: PayrollSettings;
+  employee_payroll_settings: EmployeePayrollSettings[];
+  pay_items: PayItem[];
 }

@@ -44,3 +44,14 @@ The Record Time flow has a state for every step: starting the camera, camera blo
 | P2 | Payslip lines didn't say how they were worked out. | Each line has its basis underneath (hours, rate, multiplier, salary credit), and the payslip has a day-by-day breakdown. |
 
 Checked and passing: the payslip reads top to bottom as earnings, time not worked, gross, contributions, tax and net, with one hero number; the open-period payslip says it is a projection; managers only see approvals for their own team and never their own requests; managerial staff can't file overtime and are told why (Art. 82); the employee pages have no horizontal overflow at 390px.
+
+## Payroll compliance round
+
+| Severity | Finding | Fix |
+| --- | --- | --- |
+| P1 | With allowances and loans added, the register's nine number columns overflowed at desktop width and hid net pay. | Adjustments and overtime are now one "Time and overtime" column, and the register's cell padding is tighter. Net pay is always visible. |
+| P1 | A seeded ₱15,000 cash advance left one person with ₱307 net and no warning. | Sample data now uses a realistic installment. The engine still carries over anything pay can't cover and says so on the payslip. |
+| P2 | A company-paid contribution marked the CEO's payslip "needs a look", although nothing was wrong. | It's now a plain note on the payslip, not a flag. |
+| P2 | Deductions needing consent could be added with no authorization. | The form requires it. Deductions without one are skipped and flagged on the payslip and profile. |
+
+Checked and passing: the settings dialog groups options under three short headings, and every option says what it changes; segmented choices replace selects where there are three or fewer options; deductions show in red with a true minus sign; no horizontal overflow on the payroll or profile pages.

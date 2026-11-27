@@ -5,7 +5,7 @@
 // (and React Query / server actions) without touching the views.
 
 import { useSyncExternalStore } from "react";
-import type { AppRole, CorrectionKind, CorrectionRequest, Database, Employee, OnboardingCase, OnboardingTask, OvertimeRequest, ShiftCode, TimeRecord } from "./types";
+import type { AppRole, Compensation, CorrectionKind, CorrectionRequest, Database, Employee, EmployeePayrollSettings, OnboardingCase, OnboardingTask, OvertimeRequest, PayItem, PayrollSettings, ShiftCode, TimeRecord } from "./types";
 import { zoned } from "./time";
 import { buildOnboardingTasks, ORG_ID, seed, TEMPLATE_ID, TODAY } from "./mock-data";
 
@@ -322,4 +322,33 @@ export function decideRequest(type: "overtime" | "correction", id: string, appro
 
 export function finalizePayroll(periodId: string, byId: string) {
   commit({ ...db, payroll_periods: db.payroll_periods.map((p) => (p.id === periodId ? { ...p, status: "finalized", finalized_at: new Date().toISOString(), finalized_by: byId } : p)) });
+}
+
+// ---- Payroll settings and pay items ------------------------------------------------
+
+export function updatePayrollSettings(patch: Partial<PayrollSettings>) {
+  commit({ ...db, payroll_settings: { ...db.payroll_settings, ...patch } });
+}
+
+export function setEmployeePayrollSettings(employeeId: string, patch: Partial<Omit<EmployeePayrollSettings, "employee_id">>) {
+  const existing = db.employee_payroll_settings.find((s) => s.employee_id === employeeId) ?? {
+    employee_id: employeeId, employer_pays_sss: null, employer_pays_philhealth: null, employer_pays_pagibig: null, pagibig_voluntary: 0,
+  };
+  const next = { ...existing, ...patch };
+  commit({ ...db, employee_payroll_settings: [...db.employee_payroll_settings.filter((s) => s.employee_id !== employeeId), next] });
+}
+
+export function updateCompensation(employeeId: string, patch: Partial<Pick<Compensation, "pay_basis" | "rate" | "is_managerial">>) {
+  commit({ ...db, compensation: db.compensation.map((c) => (c.employee_id === employeeId ? { ...c, ...patch } : c)) });
+}
+
+export function addPayItem(input: Omit<PayItem, "id" | "created_at">): PayItem {
+  const row: PayItem = { ...input, id: `pi-${Date.now().toString(36)}`, created_at: new Date().toISOString() };
+  commit({ ...db, pay_items: [...db.pay_items, row] });
+  return row;
+}
+
+/** Stop a recurring item from the given date. Items are never deleted, so past payslips stay explainable. */
+export function endPayItem(id: string, endDate: string) {
+  commit({ ...db, pay_items: db.pay_items.map((p) => (p.id === id ? { ...p, end_date: endDate } : p)) });
 }

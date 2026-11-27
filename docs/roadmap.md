@@ -6,13 +6,13 @@
 | --- | --- | --- |
 | 1 | Employee directory, profiles, org chart, onboarding | `main` |
 | 2 | Shift codes, Record Time (time, live photo, GPS), attendance | PR #1 |
-| 3 | Payroll (PH rules), overtime requests, time correction requests, approvals, payslips | PR #2 |
+| 3 | Payroll (PH rules), overtime requests, time correction requests, approvals, payslips, payroll settings, allowances and deductions, 13th month, compliance audit with tests | PR #2 |
 
 ## Next
 
 - **Supabase:** auth, persistence, RLS, storage for photos, server-side payroll. See [architecture](architecture.md#moving-to-supabase).
 - **Leave:** service incentive leave (Art. 95), leave requests and balances, leave pay in payroll, paid leave counting as "present" for regular holidays.
-- **Payroll completeness:** allowances, de minimis, loans and other deductions; 13th month pay run; annualized tax at year end and BIR 2316; final pay; bank file export; payslip PDF.
+- **Payroll completeness:** annualized tax at year end, BIR 2316, 1601-C and alphalist; final pay; remittance reports for SSS, PhilHealth and Pag-IBIG; double holidays; hazard pay and service charges; year-to-date import at go-live; bank file export; payslip PDF. Full list in the [compliance audit](payroll-compliance-audit.md#not-covered-yet).
 - **Scheduling:** shift rotations and rest days other than weekends; per-employee holiday calendars by location; regional minimum wages beyond NCR.
 - **Timekeeping:** geofencing against office locations, liveness or face match on the photo.
 - **Audit log** for every change to records, requests, compensation and payroll.

@@ -20,6 +20,7 @@ lib/time.ts             Shift maths, Philippine default shifts, attendance rules
 lib/payroll.ts          Payroll engine: rates, day calculation, payslip, contributions, tax
 supabase/migrations/    0001 employees, 0002 timekeeping, 0003 payroll
 preview/, scripts/      Single-file preview build (same views, hash routing)
+tests/                  Engine tests (npm test: esbuild + node --test)
 docs/                   Planning and documentation
 ```
 
