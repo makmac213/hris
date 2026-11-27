@@ -2,7 +2,7 @@
 
 November 2026. This reviews the payroll engine (`lib/payroll.ts`) against Philippine labor, contribution and tax rules. It lists what was wrong before this review, what is now fixed, what the company has to decide, and what is still not covered. Rules and sources are in [payroll rules](payroll-rules.md).
 
-> **Bottom line.** Pay for time, holidays, overtime, night work, contributions and withholding tax now follow the rules listed in [payroll rules](payroll-rules.md). Every edge case below has an automated test (`npm test`, 44 tests). Some things are still missing before real payroll can run: leave, year-end tax annualization and BIR forms, final pay, and regional wage rates outside NCR. A Philippine payroll accountant also needs to sign off on the items marked "verify".
+> **Bottom line.** Pay for time, holidays, overtime, night work, contributions and withholding tax now follow the rules listed in [payroll rules](payroll-rules.md). Every edge case below has an automated test (`npm test`, 50 tests). Some things are still missing before real payroll can run: leave, year-end tax annualization and BIR forms, final pay, and regional wage rates outside NCR. A Philippine payroll accountant also needs to sign off on the items marked "verify".
 
 ## What was wrong, and is now fixed
 
@@ -45,6 +45,8 @@ These vary from company to company. The law allows each choice; the defaults are
 - Allowances, benefits and deductions (below).
 
 ## Other earnings and deductions
+
+Companies create their own pay types under **Payroll → Pay types**. Each type is filed under one of the legal treatments below, which decides its tax and SSS handling. Earning types can go to everyone, to rank-and-file staff or to managers automatically, with per-person overrides. See [the payroll module](modules/payroll.md#settings-allowances-and-deductions).
 
 | Type | Tax treatment | Counts for SSS | Rule |
 | --- | --- | --- | --- |

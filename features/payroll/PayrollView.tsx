@@ -73,6 +73,7 @@ export function PayrollView() {
           </p>
         </div>
         <div className="head-actions">
+          <Link href="/payroll/pay-types" className="btn btn-secondary btn-md">Pay types</Link>
           <Button variant="secondary" onClick={() => setSettingsOpen(true)}>Payroll settings</Button>
         {period.status === "open" && (
           <div className="finalize">

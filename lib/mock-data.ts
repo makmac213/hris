@@ -21,6 +21,7 @@ import type {
   PayrollPeriod,
   EmployeePayrollSettings,
   PayItem,
+  PayItemType,
 } from "./types";
 import { DEFAULT_SETTINGS, periodFor } from "./payroll";
 import { addDays } from "./format";
@@ -391,26 +392,54 @@ const employee_payroll_settings: EmployeePayrollSettings[] = [
 
 const P0 = PREVIOUS_PERIOD.start_date;
 const P1 = CURRENT_PERIOD.start_date;
-const item = (id: string, employee_id: string, direction: PayItem["direction"], category: PayItem["category"], label: string, amount: number, extra: Partial<PayItem> = {}): PayItem => ({
-  id, employee_id, direction, category, de_minimis_kind: null, label, amount, schedule: "every_cutoff", start_date: "2026-01-01",
-  end_date: null, installments: null, authorization: null, created_by: "e10", created_at: "2026-01-05T09:00:00+08:00", ...extra,
+// Company-defined pay item types. Halden names them and sets their rules; the category is the legal treatment.
+const T = (id: string, name: string, direction: PayItemType["direction"], category: PayItemType["category"], extra: Partial<PayItemType> = {}): PayItemType => ({
+  id, name, direction, category, de_minimis_kind: null, description: null, default_amount: null, default_schedule: "every_cutoff",
+  applies_to: "individual", counts_for_13th: false, is_statutory: false, active: true, ...extra,
 });
+const pay_item_types: PayItemType[] = [
+  T("pt-rice", "Rice subsidy", "earning", "de_minimis", { de_minimis_kind: "rice", default_amount: 1250, applies_to: "rank_and_file", description: "₱2,500 a month for all rank-and-file staff, inside the de minimis ceiling." }),
+  T("pt-laundry", "Laundry allowance", "earning", "de_minimis", { de_minimis_kind: "laundry", description: "For roles that wear uniforms." }),
+  T("pt-uniform", "Uniform allowance", "earning", "de_minimis", { de_minimis_kind: "uniform", default_schedule: "once" }),
+  T("pt-xmas", "Christmas gift", "earning", "de_minimis", { de_minimis_kind: "christmas_gift", default_amount: 5000, default_schedule: "once" }),
+  T("pt-transpo", "Transportation allowance", "earning", "taxable_allowance", { description: "Fixed monthly allowance, not liquidated, so taxable." }),
+  T("pt-comm", "Sales commission", "earning", "commission", { counts_for_13th: true, default_schedule: "once", description: "Halden counts commissions toward the 13th month (company practice)." }),
+  T("pt-reimb", "Expense reimbursement", "earning", "reimbursement", { default_schedule: "once", description: "Liquidated with receipts." }),
+  T("pt-bonus", "Project completion bonus", "earning", "other_benefit", { default_schedule: "once" }),
+  T("pt-midyear", "Mid-year bonus", "earning", "other_benefit", { default_schedule: "once", description: "Half a month's salary, paid with the June 1–15 payroll, at management's discretion." }),
+  T("pt-adj", "Pay adjustment", "earning", "adjustment", { default_schedule: "once" }),
+  T("pt-sssloan", "SSS salary loan", "deduction", "sss_loan", { is_statutory: true }),
+  T("pt-pagloan", "Pag-IBIG loan", "deduction", "pagibig_loan", { is_statutory: true }),
+  T("pt-loan", "Company loan", "deduction", "company_loan"),
+  T("pt-advance", "Cash advance", "deduction", "company_loan"),
+  T("pt-hmo", "HMO dependent premium", "deduction", "insurance"),
+  T("pt-coop", "Halden cooperative share", "deduction", "other_authorized", { description: "Voluntary savings in the employees' cooperative." }),
+  T("pt-loss", "Loss or damage", "deduction", "loss_damage"),
+];
+const typeById = new Map(pay_item_types.map((t) => [t.id, t]));
+
+const item = (id: string, employee_id: string, typeId: string, amount: number, extra: Partial<PayItem> = {}): PayItem => {
+  const t = typeById.get(typeId)!;
+  return {
+    id, type_id: typeId, employee_id, direction: t.direction, category: t.category, de_minimis_kind: t.de_minimis_kind, label: t.name, amount,
+    schedule: t.default_schedule, start_date: "2026-01-01", end_date: null, installments: null, authorization: null, created_by: "e10", created_at: "2026-01-05T09:00:00+08:00", ...extra,
+  };
+};
 const pay_items: PayItem[] = [
-  // Rice subsidy for rank-and-file staff: ₱1,250 a cutoff, inside the ₱2,500 a month ceiling.
-  ...["e08", "e13", "e16", "e19", "e21", "e22", "e25", "e29", "e32", "e34", "e37"].map((id) =>
-    item(`pi-rice-${id}`, id, "earning", "de_minimis", "Rice subsidy", 1250, { de_minimis_kind: "rice" })),
-  item("pi-laundry-e29", "e29", "earning", "de_minimis", "Laundry allowance", 250, { de_minimis_kind: "laundry" }), // ₱500 a month: ₱100 over
-  item("pi-uniform-e22", "e22", "earning", "de_minimis", "Uniform allowance", 9000, { de_minimis_kind: "uniform", schedule: "once", start_date: P1 }),
-  item("pi-transpo-e13", "e13", "earning", "taxable_allowance", "Transportation allowance", 1500),
-  item("pi-comm-e21", "e21", "earning", "commission", "Sales commission, October", 6500, { schedule: "once", start_date: P1 }),
-  item("pi-reimb-e08", "e08", "earning", "reimbursement", "Client visit expenses (receipts on file)", 2350, { schedule: "once", start_date: P1 }),
-  item("pi-bonus-e19", "e19", "earning", "other_benefit", "Project completion bonus", 25000, { schedule: "once", start_date: P0 }),
-  item("pi-sssloan-e16", "e16", "deduction", "sss_loan", "SSS salary loan", 1100, { start_date: "2026-06-01", installments: 24 }),
-  item("pi-pagloan-e32", "e32", "deduction", "pagibig_loan", "Pag-IBIG multi-purpose loan", 950, { schedule: "second_cutoff", start_date: "2025-12-16", installments: 24 }),
-  item("pi-loan-e13", "e13", "deduction", "company_loan", "Company laptop loan", 2000, { start_date: "2026-09-01", installments: 12, authorization: "Signed salary deduction authorization, Aug 28, 2026" }),
-  item("pi-ins-e22", "e22", "deduction", "insurance", "HMO dependent premium", 900, { authorization: "HMO enrolment form with deduction consent" }),
-  item("pi-adv-e25", "e25", "deduction", "other_authorized", "Cash advance repayment", 1500, { start_date: P1, installments: 2 }), // no authorization on file yet
-  item("pi-adv-e37", "e37", "deduction", "company_loan", "Emergency cash advance", 3000, { start_date: P1, installments: 2, authorization: "Signed authorization, Nov 14, 2026" }),
+  item("pi-laundry-e29", "e29", "pt-laundry", 250), // ₱500 a month: ₱100 over the ceiling
+  item("pi-uniform-e22", "e22", "pt-uniform", 9000, { start_date: P1 }),
+  item("pi-transpo-e13", "e13", "pt-transpo", 1500),
+  item("pi-comm-e21", "e21", "pt-comm", 6500, { label: "Sales commission, October", start_date: P1 }),
+  item("pi-reimb-e08", "e08", "pt-reimb", 2350, { label: "Client visit expenses", start_date: P1 }),
+  item("pi-bonus-e19", "e19", "pt-bonus", 25000, { start_date: P0 }),
+  item("pi-rice-e25", "e25", "pt-rice", 1000, { label: "Rice subsidy (part-time rate)" }), // overrides the company default
+  item("pi-sssloan-e16", "e16", "pt-sssloan", 1100, { start_date: "2026-06-01", installments: 24 }),
+  item("pi-pagloan-e32", "e32", "pt-pagloan", 950, { label: "Pag-IBIG multi-purpose loan", schedule: "second_cutoff", start_date: "2025-12-16", installments: 24 }),
+  item("pi-loan-e13", "e13", "pt-loan", 2000, { label: "Company laptop loan", start_date: "2026-09-01", installments: 12, authorization: "Signed salary deduction authorization, Aug 28, 2026" }),
+  item("pi-ins-e22", "e22", "pt-hmo", 900, { authorization: "HMO enrolment form with deduction consent" }),
+  item("pi-coop-e19", "e19", "pt-coop", 500, { authorization: "Cooperative membership form, Mar 2, 2026" }),
+  item("pi-adv-e25", "e25", "pt-advance", 1500, { start_date: P1, installments: 2 }), // no authorization on file yet
+  item("pi-adv-e37", "e37", "pt-advance", 3000, { label: "Emergency cash advance", start_date: P1, installments: 2, authorization: "Signed authorization, Nov 14, 2026" }),
 ];
 
 export const seed: Database = {
@@ -432,4 +461,5 @@ export const seed: Database = {
   payroll_settings,
   employee_payroll_settings,
   pay_items,
+  pay_item_types,
 };

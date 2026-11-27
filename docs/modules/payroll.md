@@ -12,6 +12,15 @@ Status: built (PR #2). Rules and sources are in [payroll rules](../payroll-rules
 
 ## Settings, allowances and deductions
 
+**How flexible it is.** Every company defines its own pay types (Payroll → Pay types). The law is the floor: the company chooses which legal treatment a type falls under, and the law decides what that treatment means. The table shows what's configurable and where.
+
+| What | Company decides | Fixed by law |
+| --- | --- | --- |
+| Allowances, benefits, bonuses, commissions | The name, default amount, schedule, who gets it (everyone, rank-and-file, managers, or person by person), whether it counts toward the 13th month, and active or not | How it's taxed and whether it counts for SSS, which follow from its legal treatment. De minimis can only be tax-free up to the RR 29-2025 ceiling. |
+| Deductions (loans, coop, HMO, union dues…) | The name, default amount and schedule | Each needs the person's signed authorization, except SSS and Pag-IBIG loans. They're never applied company-wide. Loss or damage is capped at 20%. |
+| Contributions | Timing, basis, whether the company pays the employee share (for everyone or per person), and voluntary Pag-IBIG | The rates, salary credits, floors and ceilings |
+| Per person | Change a company-wide amount, exclude someone, or add any type with their own amount, schedule and installments | |
+
 - **Payroll settings** (Payroll page, admin and HR): contribution timing, SSS basis, company-paid shares, daily-rate divisor, unworked special days, manager tardiness, 13th month for managers, minimum wage.
 - **Profile → Pay** (admin and HR): compensation, who pays each employee share, voluntary Pag-IBIG, and pay items. Pay items cover allowances, de minimis benefits, bonuses, commissions, reimbursements, adjustments, SSS and Pag-IBIG loans, company loans, union dues, insurance and loss or damage. Deductions that need a signed authorization aren't taken without one. Items are stopped, never deleted, so past payslips stay explainable.
 - **13th month** is added to the December 1–15 payroll automatically.

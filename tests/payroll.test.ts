@@ -6,7 +6,7 @@ import {
   DEFAULT_SETTINGS, RULES, computePayslip, monthlyContributions, periodFor, sssMsc, thirteenthMonthPay, withholdingSemiMonthly, type Payslip,
 } from "@/lib/payroll";
 import { localToIso } from "@/lib/time";
-import type { Compensation, Database, Employee, Holiday, OvertimeRequest, PayItem, PayrollPeriod, PayrollSettings, ShiftCode, TimeRecord } from "@/lib/types";
+import type { Compensation, Database, Employee, Holiday, OvertimeRequest, PayItem, PayItemType, PayrollPeriod, PayrollSettings, ShiftCode, TimeRecord } from "@/lib/types";
 
 const TZ = "Asia/Manila";
 const DAY: ShiftCode = { id: "s-day", organization_id: "o", code: "PH-D0900", name: "Day", kind: "whole_day", start_time: "09:00", end_time: "18:00", break_minutes: 60, timezone: TZ, grace_minutes: 5, source: "system_default", is_default: true, archived_at: null };
@@ -47,13 +47,13 @@ function ot(date: string, from: string, to: string, status: OvertimeRequest["sta
   return { id: `ot${++rid}`, employee_id: "e1", work_date: date, start_at: localToIso(date, from, TZ), end_at: localToIso(toDate, to, TZ), reason: "Release work", status, filed_at: NOW, decided_by: "m", decided_at: NOW, decision_note: null };
 }
 function payItem(over: Partial<PayItem>): PayItem {
-  return { id: `pi${++rid}`, employee_id: "e1", direction: "earning", category: "taxable_allowance", de_minimis_kind: null, label: "Item", amount: 1000, schedule: "every_cutoff", start_date: "2026-01-01", end_date: null, installments: null, authorization: null, created_by: "hr", created_at: NOW, ...over };
+  return { id: `pi${++rid}`, type_id: null, employee_id: "e1", direction: "earning", category: "taxable_allowance", de_minimis_kind: null, label: "Item", amount: 1000, schedule: "every_cutoff", start_date: "2026-01-01", end_date: null, installments: null, authorization: null, created_by: "hr", created_at: NOW, ...over };
 }
-function db(o: { employee?: Partial<Employee>; comp?: Partial<Compensation>; records?: TimeRecord[]; ot?: OvertimeRequest[]; holidays?: Holiday[]; settings?: Partial<PayrollSettings>; items?: PayItem[]; overrides?: Database["employee_payroll_settings"]; shifts?: ShiftCode[] } = {}): Database {
+function db(o: { employee?: Partial<Employee>; comp?: Partial<Compensation>; records?: TimeRecord[]; ot?: OvertimeRequest[]; holidays?: Holiday[]; settings?: Partial<PayrollSettings>; items?: PayItem[]; overrides?: Database["employee_payroll_settings"]; shifts?: ShiftCode[]; types?: PayItemType[] } = {}): Database {
   return {
     departments: [], locations: [], employees: [emp(o.employee)], employment_events: [], employee_documents: [], onboarding_template_tasks: [], onboarding_cases: [], onboarding_tasks: [],
     shift_codes: o.shifts ?? [DAY, NIGHT], time_records: o.records ?? [], compensation: [comp(o.comp)], holidays: o.holidays ?? [], overtime_requests: o.ot ?? [], correction_requests: [], payroll_periods: [],
-    payroll_settings: { ...DEFAULT_SETTINGS, sss_basis: "monthly_rate", ...o.settings }, employee_payroll_settings: o.overrides ?? [], pay_items: o.items ?? [],
+    payroll_settings: { ...DEFAULT_SETTINGS, sss_basis: "monthly_rate", ...o.settings }, employee_payroll_settings: o.overrides ?? [], pay_items: o.items ?? [], pay_item_types: o.types ?? [],
   };
 }
 const P = (date: string): PayrollPeriod => ({ ...periodFor(date), status: "open", finalized_at: null, finalized_by: null });
@@ -390,4 +390,43 @@ test("13th month goes on the December 1–15 payroll, and managers only by compa
   near(line(s.additions, "13th"), 30000);
   const mgr = db({ comp: { is_managerial: true }, settings: { thirteenth_month_for_managerial: false } });
   assert.equal(thirteenthMonthPay(mgr, emp(), 2026), 0);
+});
+
+// ---- Company-defined pay types ----------------------------------------------
+
+function ptype(over: Partial<PayItemType>): PayItemType {
+  return { id: "t1", name: "Meal allowance", direction: "earning", category: "taxable_allowance", de_minimis_kind: null, description: null, default_amount: 1000, default_schedule: "every_cutoff", applies_to: "all", counts_for_13th: false, is_statutory: false, active: true, ...over };
+}
+
+test("a company-wide type reaches everyone eligible without per-person items", () => {
+  const s = slip(db({ records: present(B0, B1), types: [ptype({})] }), B0);
+  near(line(s.additions, "add-auto-t1"), 1000);
+  const mgr = slip(db({ comp: { is_managerial: true }, records: present(B0, B1), types: [ptype({ applies_to: "rank_and_file" })] }), B0);
+  assert.equal(mgr.additions.length, 0);
+});
+
+test("a person's own item overrides the company default; 0 excludes them", () => {
+  const own = (amount: number) => payItem({ type_id: "t1", amount });
+  near(line(slip(db({ records: present(B0, B1), types: [ptype({})], items: [own(400)] }), B0).additions, "add-"), 400);
+  assert.equal(slip(db({ records: present(B0, B1), types: [ptype({})], items: [own(0)] }), B0).additions.length, 0);
+});
+
+test("the type's legal treatment wins over what's stored on the item", () => {
+  const types = [ptype({ category: "de_minimis", de_minimis_kind: "rice", applies_to: "individual" })];
+  const s = slip(db({ records: present(B0, B1), types, items: [payItem({ type_id: "t1", category: "taxable_allowance", amount: 1000 })] }), B0);
+  near(s.nonTaxable, 1000);
+});
+
+test("company-wide deductions are never applied without the person's own item", () => {
+  const s = slip(db({ records: present(B0, B1), types: [ptype({ direction: "deduction", category: "other_authorized" })] }), B0);
+  assert.equal(s.otherDeductions.length, 0);
+});
+
+test("an inactive type stops applying", () => {
+  assert.equal(slip(db({ records: present(B0, B1), types: [ptype({ active: false })] }), B0).additions.length, 0);
+});
+
+test("company practice can add a type to the 13th month base", () => {
+  const types = [ptype({ counts_for_13th: true, default_amount: 1000 })]; // 24 cutoffs × ₱1,000
+  near(thirteenthMonthPay(db({ types }), emp(), 2026), (30000 * 12 + 24000) / 12);
 });

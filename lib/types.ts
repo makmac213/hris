@@ -244,14 +244,35 @@ export type DeductionCategory =
   | "other_authorized";
 export type PayItemSchedule = "every_cutoff" | "first_cutoff" | "second_cutoff" | "once";
 
+export type PayTypeAppliesTo = "individual" | "all" | "rank_and_file" | "managerial";
+
+// A company-defined kind of pay item: "Rice subsidy", "Meal allowance", "Coop share", "Mid-year bonus".
+// The company names it and sets its rules; `category` is the legal treatment it falls under, which the
+// company can choose but not override (e.g. only de minimis kinds with a legal ceiling can be tax-free).
+export interface PayItemType {
+  id: string;
+  name: string;
+  direction: "earning" | "deduction";
+  category: EarningCategory | DeductionCategory;
+  de_minimis_kind: DeMinimisKind | null;
+  description: string | null;
+  default_amount: number | null; // per cutoff
+  default_schedule: PayItemSchedule;
+  applies_to: PayTypeAppliesTo; // earnings only: "all" etc. give it to everyone eligible without adding it person by person
+  counts_for_13th: boolean; // company practice may add it to the 13th month base (PD 851 allows more, never less)
+  is_statutory: boolean; // built-in SSS and Pag-IBIG loans: legal fields locked
+  active: boolean;
+}
+
 export interface PayItem {
   id: string;
+  type_id: string | null; // the company type it came from
   employee_id: string;
   direction: "earning" | "deduction";
   category: EarningCategory | DeductionCategory;
   de_minimis_kind: DeMinimisKind | null;
   label: string;
-  amount: number; // per cutoff it applies to
+  amount: number; // per cutoff it applies to; 0 on a company-wide type means "not for this person"
   schedule: PayItemSchedule;
   start_date: string; // first period whose end_date ≥ this
   end_date: string | null;
@@ -280,4 +301,5 @@ export interface Database {
   payroll_settings: PayrollSettings;
   employee_payroll_settings: EmployeePayrollSettings[];
   pay_items: PayItem[];
+  pay_item_types: PayItemType[];
 }

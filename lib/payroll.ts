@@ -1,7 +1,7 @@
 // Philippine payroll rules for the prototype. Every rate below cites its legal source; see docs/payroll-rules.md.
 // Pay follows the employee's shift code: only time inside the schedule is paid, plus overtime that was filed and approved.
 
-import type { Compensation, Database, DeMinimisKind, DeductionCategory, Employee, EmployeePayrollSettings, Holiday, OvertimeRequest, PayItem, PayrollPeriod, PayrollSettings, ShiftCode, TimeRecord } from "./types";
+import type { Compensation, Database, DeMinimisKind, DeductionCategory, Employee, EmployeePayrollSettings, Holiday, OvertimeRequest, PayItem, PayItemType, PayrollPeriod, PayrollSettings, ShiftCode, TimeRecord } from "./types";
 import { addDays } from "./format";
 import { isWeekend, localToIso, spanMinutes, zoned } from "./time";
 
@@ -372,11 +372,41 @@ function scheduleHits(item: PayItem, p: { start_date: string; end_date: string }
   return true;
 }
 
+/** Does a company-wide type reach this employee? */
+export function typeReaches(t: PayItemType, managerial: boolean) {
+  if (!t.active || t.direction !== "earning" || !t.default_amount) return false; // deductions always need the person's own item (consent)
+  return t.applies_to === "all" || (t.applies_to === "rank_and_file" && !managerial) || (t.applies_to === "managerial" && managerial);
+}
+
+/**
+ * Everything that can apply to one employee: their own items, plus company-wide types they're eligible for and
+ * don't have their own item for. The legal treatment always comes from the type, so changing a type updates
+ * everyone on it. An own item of a company-wide type overrides the default amount (0 = excluded).
+ */
+export function effectiveItems(db: Database, employee: Employee): PayItem[] {
+  const types = db.pay_item_types ?? [];
+  const byId = new Map(types.map((t) => [t.id, t]));
+  const managerial = !!db.compensation.find((c) => c.employee_id === employee.id)?.is_managerial;
+  // An item ended before it started was withdrawn (e.g. an override reverted to the company default).
+  const own = (db.pay_items ?? []).filter((i) => i.employee_id === employee.id && !(i.end_date && i.end_date < i.start_date)).map((i) => {
+    const t = i.type_id ? byId.get(i.type_id) : undefined;
+    return t ? { ...i, direction: t.direction, category: t.category, de_minimis_kind: t.de_minimis_kind } : i;
+  });
+  const auto: PayItem[] = types
+    .filter((t) => typeReaches(t, managerial) && !own.some((i) => i.type_id === t.id))
+    .map((t) => ({
+      id: `auto-${t.id}`, type_id: t.id, employee_id: employee.id, direction: t.direction, category: t.category, de_minimis_kind: t.de_minimis_kind,
+      label: t.name, amount: t.default_amount!, schedule: t.default_schedule, start_date: employee.start_date, end_date: employee.end_date,
+      installments: null, authorization: null, created_by: "company", created_at: employee.start_date,
+    }));
+  return [...own, ...auto];
+}
+
 /** The items that apply in a period, with the installment number for loans. */
 export function itemsFor(items: PayItem[], employeeId: string, p: { start_date: string; end_date: string }) {
   const out: { item: PayItem; installment: number | null }[] = [];
   for (const item of items) {
-    if (item.employee_id !== employeeId || !scheduleHits(item, p)) continue;
+    if (item.employee_id !== employeeId || item.amount <= 0 || !scheduleHits(item, p)) continue;
     if (item.installments) {
       const n = periodsBetween(item.start_date, p.start_date).filter((q) => scheduleHits(item, q)).length + 1;
       if (n > item.installments) continue;
@@ -437,7 +467,14 @@ export function thirteenthMonthPay(db: Database, employee: Employee, year: numbe
   const days = (Date.parse(to) - Date.parse(from)) / 86400000 + 1;
   if (days < 30) return 0; // must have worked at least a month in the year
   const months = Math.min(12, days / (365 / 12));
-  return Math.max(0, (rates(comp, shift, settings).monthly * months - unpaidTimeDeducted) / 12);
+  // Company practice can add items (e.g. commissions, allowances) to the base. PD 851 sets the minimum only.
+  const counted = new Set((db.pay_item_types ?? []).filter((t) => t.counts_for_13th && t.direction === "earning").map((t) => t.id));
+  let extra = 0;
+  if (counted.size) {
+    const items = effectiveItems(db, employee).filter((i) => i.type_id && counted.has(i.type_id));
+    for (const q of periodsBetween(`${year}-01-01`, `${year + 1}-01-01`)) extra += itemsFor(items, employee.id, q).reduce((n, { item }) => n + item.amount, 0);
+  }
+  return Math.max(0, (rates(comp, shift, settings).monthly * months - unpaidTimeDeducted + extra) / 12);
 }
 
 /** @deprecated kept for the payroll summary: estimate for the whole year. */
@@ -618,7 +655,8 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
 
   // ---- Allowances, benefits and other additions ----
   const additions: PayLine[] = [];
-  const applied = itemsFor(db.pay_items ?? [], employee.id, period);
+  const allItems = effectiveItems(db, employee);
+  const applied = itemsFor(allItems, employee.id, period);
   let taxableAdditions = 0, sssAdditions = 0, nonTaxable = 0, poolThis = 0;
   for (const { item } of applied.filter((a) => a.item.direction === "earning")) {
     const c = item.category;
@@ -629,7 +667,7 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
     else if (c === "reimbursement") nonTaxable += item.amount;
   }
   const otDays = days.filter((d) => d.otMin > 0 || d.nsdMin > 0).length;
-  const dm = deMinimisSplit(db.pay_items ?? [], employee.id, period, otDays * rt.daily * RULES.otMealShareOfDaily);
+  const dm = deMinimisSplit(allItems, employee.id, period, otDays * rt.daily * RULES.otMealShareOfDaily);
   for (const l of dm.lines) {
     const rule = RULES.deMinimis[l.item.de_minimis_kind!];
     additions.push({ key: `add-${l.item.id}`, label: l.item.label, detail: l.excess > 0 ? `De minimis: ${peso(l.exempt)} tax-free, ${peso(l.excess)} over the ${rule.per === "ot_day" ? "30%-of-daily-wage" : `${peso(rule.cap)} per ${rule.per}`} ceiling` : `De minimis, tax-free (RR 29-2025)`, amount: l.item.amount });
@@ -648,7 +686,7 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
   }
 
   // ₱90,000 a year of 13th month and other benefits is tax-free; past that it's taxable.
-  const poolBefore = paidBefore(db.pay_items ?? [], employee.id, period, (i) => i.category === "other_benefit", "year") + deMinimisExcessBefore(db.pay_items ?? [], employee.id, period);
+  const poolBefore = paidBefore(allItems, employee.id, period, (i) => i.category === "other_benefit", "year") + deMinimisExcessBefore(allItems, employee.id, period);
   const poolTaxable = Math.max(0, poolBefore + poolThis - RULES.thirteenthMonthTaxFree) - Math.max(0, poolBefore - RULES.thirteenthMonthTaxFree);
   nonTaxable += poolThis - poolTaxable;
   if (poolTaxable > 0) flags.push(`${peso(poolTaxable)} of benefits is over the ${peso(RULES.thirteenthMonthTaxFree)} yearly tax-free limit and is taxed.`);

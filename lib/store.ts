@@ -5,7 +5,7 @@
 // (and React Query / server actions) without touching the views.
 
 import { useSyncExternalStore } from "react";
-import type { AppRole, Compensation, CorrectionKind, CorrectionRequest, Database, Employee, EmployeePayrollSettings, OnboardingCase, OnboardingTask, OvertimeRequest, PayItem, PayrollSettings, ShiftCode, TimeRecord } from "./types";
+import type { AppRole, Compensation, CorrectionKind, CorrectionRequest, Database, Employee, EmployeePayrollSettings, OnboardingCase, OnboardingTask, OvertimeRequest, PayItem, PayItemType, PayrollSettings, ShiftCode, TimeRecord } from "./types";
 import { zoned } from "./time";
 import { buildOnboardingTasks, ORG_ID, seed, TEMPLATE_ID, TODAY } from "./mock-data";
 
@@ -351,4 +351,11 @@ export function addPayItem(input: Omit<PayItem, "id" | "created_at">): PayItem {
 /** Stop a recurring item from the given date. Items are never deleted, so past payslips stay explainable. */
 export function endPayItem(id: string, endDate: string) {
   commit({ ...db, pay_items: db.pay_items.map((p) => (p.id === id ? { ...p, end_date: endDate } : p)) });
+}
+
+export function savePayItemType(row: Omit<PayItemType, "id"> & { id?: string }): PayItemType {
+  const saved: PayItemType = { ...row, id: row.id ?? `pt-${Date.now().toString(36)}` };
+  const exists = db.pay_item_types.some((t) => t.id === saved.id);
+  commit({ ...db, pay_item_types: exists ? db.pay_item_types.map((t) => (t.id === saved.id ? saved : t)) : [...db.pay_item_types, saved] });
+  return saved;
 }

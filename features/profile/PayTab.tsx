@@ -2,38 +2,21 @@
 
 import { useState } from "react";
 import { addPayItem, endPayItem, setEmployeePayrollSettings, today, updateCompensation, useCurrentUser, useDb } from "@/lib/store";
-import { NO_AUTH_NEEDED, RULES, isMinimumWageEarner, peso, rates } from "@/lib/payroll";
+import { NO_AUTH_NEEDED, RULES, isMinimumWageEarner, peso, rates, typeReaches } from "@/lib/payroll";
+import Link from "next/link";
+import { deductionLabel, earningLabel, scheduleLabel, treatmentHint, appliesToLabel } from "@/features/payroll/labels";
 import { formatDate } from "@/lib/format";
-import type { DeMinimisKind, DeductionCategory, EarningCategory, Employee, PayItem, PayItemSchedule } from "@/lib/types";
+import type { DeductionCategory, EarningCategory, Employee, PayItem, PayItemSchedule, PayItemType } from "@/lib/types";
 import { Button, Dialog, EmptyState, Field } from "@/components/ui";
 import { Choice, Toggle } from "@/features/payroll/SettingsDialog";
 
-export const earningLabel: Record<EarningCategory, string> = {
-  taxable_allowance: "Allowance (taxable)",
-  de_minimis: "De minimis benefit",
-  other_benefit: "Bonus or other benefit",
-  commission: "Commission",
-  reimbursement: "Reimbursement",
-  adjustment: "Pay adjustment",
-};
-export const deductionLabel: Record<DeductionCategory, string> = {
-  sss_loan: "SSS loan",
-  pagibig_loan: "Pag-IBIG loan",
-  company_loan: "Company loan or cash advance",
-  union_dues: "Union dues",
-  insurance: "Insurance premium",
-  loss_damage: "Loss or damage",
-  other_authorized: "Other authorized deduction",
-};
-const scheduleLabel: Record<PayItemSchedule, string> = {
-  every_cutoff: "Every cutoff", first_cutoff: "1st–15th cutoff only", second_cutoff: "16th–end cutoff only", once: "Once",
-};
 
 export function PayTab({ employee }: { employee: Employee }) {
   const db = useDb();
   const [editComp, setEditComp] = useState(false);
   const [editContrib, setEditContrib] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<{ type?: PayItemType } | null>(null);
+  const { employee: me } = useCurrentUser();
   const comp = db.compensation.find((c) => c.employee_id === employee.id && c.on_ph_payroll);
   if (!comp) {
     return <EmptyState title="Not on Philippine payroll" body="This person is paid by another payroll, so there are no Philippine pay settings here." />;
@@ -43,10 +26,11 @@ export function PayTab({ employee }: { employee: Employee }) {
   const rt = rates(comp, shift, s);
   const o = db.employee_payroll_settings.find((x) => x.employee_id === employee.id);
   const who = (v: boolean | null | undefined, company: boolean) => (v ?? company) ? `Company pays${v == null ? " (company setting)" : ""}` : `Employee pays${v == null ? " (company setting)" : ""}`;
-  const items = db.pay_items.filter((p) => p.employee_id === employee.id).sort((a, b) => b.start_date.localeCompare(a.start_date));
+  const items = db.pay_items.filter((p) => p.employee_id === employee.id && !(p.end_date && p.end_date < p.start_date)).sort((a, b) => b.start_date.localeCompare(a.start_date));
   const t = today();
-  const active = items.filter((p) => !p.end_date || p.end_date >= t);
-  const ended = items.filter((p) => p.end_date && p.end_date < t);
+  const companyWide = db.pay_item_types.filter((x) => x.active && x.applies_to !== "individual" && (typeReaches(x, comp.is_managerial) || items.some((i) => i.type_id === x.id)));
+  const wideIds = new Set(companyWide.map((x) => x.id));
+  const ownItems = items.filter((i) => !(i.type_id && wideIds.has(i.type_id))).sort((a, b) => Number(!!(a.end_date && a.end_date < t)) - Number(!!(b.end_date && b.end_date < t)));
 
   return (
     <div className="stack-lg" role="tabpanel" id="panel-pay" aria-labelledby="tab-pay">
@@ -72,16 +56,44 @@ export function PayTab({ employee }: { employee: Employee }) {
       </section>
 
       <section className="panel">
-        <div className="panel-head"><h2>Allowances, benefits and deductions</h2><Button size="sm" variant="primary" onClick={() => setAdding(true)}>Add item</Button></div>
-        {active.length === 0 && ended.length === 0 && <p className="muted">Nothing besides salary. Add allowances, de minimis benefits, bonuses, loans or authorized deductions here.</p>}
+        <div className="panel-head"><h2>Allowances, benefits and deductions</h2><Button size="sm" variant="primary" onClick={() => setAdding({})}>Add item</Button></div>
+        {companyWide.length > 0 && (
+          <>
+            <h3 className="sub-h">From company policy</h3>
+            <div className="pay-items">
+              {companyWide.map((t) => {
+                const own = items.find((i) => i.type_id === t.id);
+                return (
+                  <div key={t.id} className={`pay-item ${own && own.amount === 0 ? "pay-item-ended" : ""}`}>
+                    <span className="cell-2">
+                      <span>{t.name}</span>
+                      <span className="muted">{appliesToLabel[t.applies_to]} · {scheduleLabel[t.default_schedule].toLowerCase()}{own ? (own.amount === 0 ? " · excluded for this person" : " · amount changed for this person") : ""}</span>
+                    </span>
+                    <span className="pay-item-side">
+                      <span className="num pay-item-amt">{own?.amount === 0 ? "—" : `+${peso(own?.amount ?? t.default_amount ?? 0)}`}</span>
+                      {own
+                        ? <Button size="sm" variant="ghost" onClick={() => endPayItem(own.id, "1900-01-01")}>Use company default</Button>
+                        : <>
+                            <Button size="sm" variant="ghost" onClick={() => setAdding({ type: t })}>Change amount</Button>
+                            <Button size="sm" variant="ghost" onClick={() => addPayItem({ type_id: t.id, employee_id: employee.id, direction: t.direction, category: t.category, de_minimis_kind: t.de_minimis_kind, label: t.name, amount: 0, schedule: t.default_schedule, start_date: employee.start_date, end_date: null, installments: null, authorization: null, created_by: me.id })}>Exclude</Button>
+                          </>}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <h3 className="sub-h">For this person</h3>
+          </>
+        )}
+        {ownItems.length === 0 && <p className="muted">Nothing else besides salary. Add allowances, bonuses, loans or authorized deductions from <Link className="link" href="/payroll/pay-types">Halden’s pay types</Link>.</p>}
         <div className="pay-items">
-          {[...active, ...ended].map((p) => <PayItemRow key={p.id} item={p} ended={!!p.end_date && p.end_date < t} />)}
+          {ownItems.map((p) => <PayItemRow key={p.id} item={p} ended={!!p.end_date && p.end_date < t} />)}
         </div>
       </section>
 
       {editComp && <CompensationDialog employee={employee} onClose={() => setEditComp(false)} />}
       {editContrib && <ContributionDialog employee={employee} onClose={() => setEditContrib(false)} />}
-      {adding && <PayItemDialog employee={employee} onClose={() => setAdding(false)} />}
+      {adding && <PayItemDialog employee={employee} presetType={adding.type} onClose={() => setAdding(null)} />}
     </div>
   );
 }
@@ -174,37 +186,31 @@ function ContributionDialog({ employee, onClose }: { employee: Employee; onClose
   );
 }
 
-function PayItemDialog({ employee, onClose }: { employee: Employee; onClose: () => void }) {
+function PayItemDialog({ employee, presetType, onClose }: { employee: Employee; presetType?: PayItemType; onClose: () => void }) {
+  const db = useDb();
   const { employee: me } = useCurrentUser();
-  const [direction, setDirection] = useState<"earning" | "deduction">("earning");
-  const [category, setCategory] = useState<string>("taxable_allowance");
-  const [kind, setKind] = useState<DeMinimisKind>("rice");
-  const [label, setLabel] = useState("");
-  const [amount, setAmount] = useState("");
-  const [schedule, setSchedule] = useState<PayItemSchedule>("every_cutoff");
-  const [start, setStart] = useState(today());
+  const types = db.pay_item_types.filter((x) => x.active);
+  const [typeId, setTypeId] = useState(presetType?.id ?? types.find((x) => x.direction === "earning")?.id ?? "");
+  const type = types.find((x) => x.id === typeId);
+  const [label, setLabel] = useState(presetType?.name ?? type?.name ?? "");
+  const [amount, setAmount] = useState(presetType?.default_amount ? String(presetType.default_amount) : type?.default_amount ? String(type.default_amount) : "");
+  const [schedule, setSchedule] = useState<PayItemSchedule>(presetType?.default_schedule ?? type?.default_schedule ?? "every_cutoff");
+  const [start, setStart] = useState(presetType ? employee.start_date : today());
   const [installments, setInstallments] = useState("");
   const [auth, setAuth] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const cats = direction === "earning" ? earningLabel : deductionLabel;
-  const needsAuth = direction === "deduction" && !NO_AUTH_NEEDED.includes(category as DeductionCategory);
-  const loanLike = direction === "deduction" && ["sss_loan", "pagibig_loan", "company_loan"].includes(category);
-  const hint: Record<string, string> = {
-    taxable_allowance: "Transport, communication and similar allowances that aren’t liquidated. Taxable, and counted for SSS.",
-    de_minimis: `Tax-free up to the RR 29-2025 ceiling; anything over counts toward the ₱90,000 yearly limit.`,
-    other_benefit: "Bonuses, incentives and gifts. Tax-free up to ₱90,000 a year together with 13th month pay.",
-    commission: "Taxable, and counted for SSS.",
-    reimbursement: "Only for expenses backed by receipts. Not pay, so not taxed.",
-    adjustment: "Pay owed from an earlier period, such as a late-approved correction. Taxable.",
-    sss_loan: "Allowed by law. Use the monthly amortization from the SSS billing.",
-    pagibig_loan: "Allowed by law. Use the amortization from Pag-IBIG.",
-    company_loan: "Needs the employee’s signed authorization: purpose, amount, number of deductions (DO 195-18).",
-    union_dues: "Needs a check-off authorization. Excluded from taxable pay.",
-    insurance: "Premiums the company advanced, with the employee’s written consent.",
-    loss_damage: "Only after the employee was heard and responsibility is shown. Capped at 20% of wages (Art. 114–115).",
-    other_authorized: "Anything else needs a signed authorization, and the company can’t benefit from it (Art. 113).",
+  if (!type) return null;
+  const needsAuth = type.direction === "deduction" && !NO_AUTH_NEEDED.includes(type.category as DeductionCategory);
+  const loanLike = type.direction === "deduction" && ["sss_loan", "pagibig_loan", "company_loan"].includes(type.category);
+  const pick = (id: string) => {
+    const x = types.find((y) => y.id === id)!;
+    setTypeId(id);
+    setLabel(x.name);
+    setAmount(x.default_amount ? String(x.default_amount) : "");
+    setSchedule(x.default_schedule);
   };
-  const dm = RULES.deMinimis[kind];
+  const treat = type.direction === "earning" ? earningLabel[type.category as EarningCategory] : deductionLabel[type.category as DeductionCategory];
+  const dmNote = type.de_minimis_kind ? ` ${RULES.deMinimis[type.de_minimis_kind].label}.` : "";
 
   const save = () => {
     const e: Record<string, string> = {};
@@ -218,61 +224,53 @@ function PayItemDialog({ employee, onClose }: { employee: Employee; onClose: () 
     setErrors(e);
     if (Object.keys(e).length) return;
     addPayItem({
-      employee_id: employee.id, direction, category: category as PayItem["category"], de_minimis_kind: category === "de_minimis" ? kind : null,
+      type_id: type.id, employee_id: employee.id, direction: type.direction, category: type.category, de_minimis_kind: type.de_minimis_kind,
       label: label.trim(), amount: amt, schedule, start_date: start, end_date: null, installments: n, authorization: auth.trim() || null, created_by: me.id,
     });
     onClose();
   };
 
   return (
-    <Dialog title="Add to pay" onClose={onClose} wide footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Add item</Button></>}>
+    <Dialog title={presetType ? `Change ${presetType.name} for this person` : "Add to pay"} onClose={onClose} wide footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>{presetType ? "Save amount" : "Add item"}</Button></>}>
       <div className="form-grid">
-        <Choice legend="Type" value={direction} onChange={(v) => { setDirection(v); setCategory(v === "earning" ? "taxable_allowance" : "sss_loan"); }} options={[{ value: "earning", label: "Adds to pay" }, { value: "deduction", label: "Deducts from pay" }]} />
-        <div className="span-2">
-          <Field label="Kind" hint={hint[category]}>
-            {(id, d) => (
-              <select id={id} aria-describedby={d} value={category} onChange={(e) => setCategory(e.target.value)}>
-                {Object.entries(cats).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            )}
-          </Field>
-        </div>
-        {category === "de_minimis" && (
+        {!presetType && (
           <div className="span-2">
-            <Field label="Benefit" hint={dm.per === "ot_day" ? "Tax-free up to 30% of the basic daily wage for each day of overtime or night work." : `Tax-free up to ${peso(dm.cap)} per ${dm.per}.`}>
+            <Field label="Pay type" hint={`${treat}.${dmNote} ${treatmentHint[type.category]}`}>
               {(id, d) => (
-                <select id={id} aria-describedby={d} value={kind} onChange={(e) => { setKind(e.target.value as DeMinimisKind); if (!label) setLabel(RULES.deMinimis[e.target.value as DeMinimisKind].label); }}>
-                  {Object.entries(RULES.deMinimis).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                <select id={id} aria-describedby={d} value={typeId} onChange={(ev) => pick(ev.target.value)}>
+                  <optgroup label="Adds to pay">{types.filter((x) => x.direction === "earning").map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</optgroup>
+                  <optgroup label="Deducts from pay">{types.filter((x) => x.direction === "deduction").map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</optgroup>
                 </select>
               )}
             </Field>
+            <p className="field-hint">Missing one? <Link className="link" href="/payroll/pay-types">Add a pay type</Link> with your own rules.</p>
           </div>
         )}
         <Field label="Name on payslip" error={errors.label}>
-          {(id, d) => <input id={id} aria-describedby={d} value={label} onChange={(e) => setLabel(e.target.value)} />}
+          {(id, d) => <input id={id} aria-describedby={d} value={label} onChange={(ev) => setLabel(ev.target.value)} />}
         </Field>
         <Field label="Amount per cutoff" error={errors.amount}>
-          {(id, d) => <input id={id} aria-describedby={d} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />}
+          {(id, d) => <input id={id} aria-describedby={d} inputMode="decimal" value={amount} onChange={(ev) => setAmount(ev.target.value)} />}
         </Field>
         <Field label="When">
           {(id) => (
-            <select id={id} value={schedule} onChange={(e) => setSchedule(e.target.value as PayItemSchedule)}>
+            <select id={id} value={schedule} onChange={(ev) => setSchedule(ev.target.value as PayItemSchedule)}>
               {Object.entries(scheduleLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           )}
         </Field>
         <Field label={schedule === "once" ? "Pay date falls in the cutoff of" : "Starting"} error={errors.start}>
-          {(id, d) => <input id={id} aria-describedby={d} type="date" value={start} onChange={(e) => setStart(e.target.value)} />}
+          {(id, d) => <input id={id} aria-describedby={d} type="date" value={start} onChange={(ev) => setStart(ev.target.value)} />}
         </Field>
         {loanLike && schedule !== "once" && (
           <Field label="Number of deductions" hint="Leave empty to deduct until stopped." error={errors.installments}>
-            {(id, d) => <input id={id} aria-describedby={d} inputMode="numeric" value={installments} onChange={(e) => setInstallments(e.target.value)} />}
+            {(id, d) => <input id={id} aria-describedby={d} inputMode="numeric" value={installments} onChange={(ev) => setInstallments(ev.target.value)} />}
           </Field>
         )}
-        {direction === "deduction" && (
+        {type.direction === "deduction" && (
           <div className="span-2">
             <Field label={needsAuth ? "Signed authorization" : "Reference (optional)"} hint={needsAuth ? "For example: Salary deduction authorization signed Nov 14, 2026." : undefined} error={errors.auth}>
-              {(id, d) => <input id={id} aria-describedby={d} value={auth} onChange={(e) => setAuth(e.target.value)} />}
+              {(id, d) => <input id={id} aria-describedby={d} value={auth} onChange={(ev) => setAuth(ev.target.value)} />}
             </Field>
           </div>
         )}

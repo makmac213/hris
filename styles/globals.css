@@ -752,3 +752,6 @@ a.nav-link:hover { background: var(--bg-hover); color: var(--ink); }
 .panel-head + .dl, .panel-head + .pay-items, .panel-head + p { margin-top: var(--s3); }
 .register th, .register td, .register tfoot td { padding-left: var(--s3); padding-right: var(--s3); white-space: nowrap; }
 .register td:first-child, .register th:first-child { white-space: normal; }
+.row-muted td { color: var(--ink-2); }
+.treatment-hint { margin-top: calc(var(--s2) * -1); }
+.sub-h { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: var(--s4) 0 var(--s1); }

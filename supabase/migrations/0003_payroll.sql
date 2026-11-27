@@ -162,17 +162,41 @@ create table employee_payroll_settings (
 create type pay_item_direction as enum ('earning', 'deduction');
 create type pay_item_schedule  as enum ('every_cutoff', 'first_cutoff', 'second_cutoff', 'once');
 
+-- Company-defined kinds of pay item. `category` is the legal treatment; the company picks it, the law defines it.
+create type pay_type_applies_to as enum ('individual', 'all', 'rank_and_file', 'managerial');
+
+create table pay_item_types (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid not null references organizations(id) on delete cascade,
+  name             text not null,
+  direction        pay_item_direction not null,
+  category         text not null,
+  de_minimis_kind  text,
+  description      text,
+  default_amount   numeric(12,2) check (default_amount > 0),
+  default_schedule pay_item_schedule not null default 'every_cutoff',
+  applies_to       pay_type_applies_to not null default 'individual',
+  counts_for_13th  boolean not null default false,
+  is_statutory     boolean not null default false,
+  active           boolean not null default true,
+  unique (organization_id, name),
+  check ((category = 'de_minimis') = (de_minimis_kind is not null)),
+  check (direction = 'earning' or applies_to = 'individual'),           -- deductions need each person's consent
+  check (applies_to = 'individual' or default_amount is not null)
+);
+
 create table pay_items (
   id               uuid primary key default gen_random_uuid(),
   organization_id  uuid not null references organizations(id) on delete cascade,
   employee_id      uuid not null references employees(id) on delete cascade,
+  type_id          uuid references pay_item_types(id),
   direction        pay_item_direction not null,
   category         text not null check (category in (
                      'taxable_allowance', 'de_minimis', 'other_benefit', 'commission', 'reimbursement', 'adjustment',
                      'sss_loan', 'pagibig_loan', 'company_loan', 'union_dues', 'insurance', 'loss_damage', 'other_authorized')),
   de_minimis_kind  text check (de_minimis_kind in ('rice', 'laundry', 'medical_dependents', 'uniform', 'medical_assistance', 'achievement_award', 'christmas_gift', 'cba_incentive', 'ot_meal')),
   label            text not null,
-  amount           numeric(12,2) not null check (amount > 0),
+  amount           numeric(12,2) not null check (amount >= 0), -- 0 excludes a person from a company-wide type
   schedule         pay_item_schedule not null default 'every_cutoff',
   start_date       date not null,
   end_date         date,
@@ -189,6 +213,7 @@ create index pay_items_employee_idx on pay_items (employee_id, start_date);
 alter table payroll_settings          enable row level security;
 alter table employee_payroll_settings enable row level security;
 alter table pay_items                 enable row level security;
+alter table pay_item_types            enable row level security;
 alter table compensation             enable row level security;
 alter table holidays                 enable row level security;
 alter table overtime_requests        enable row level security;
