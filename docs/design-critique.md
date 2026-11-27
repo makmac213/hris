@@ -55,3 +55,22 @@ Checked and passing: the payslip reads top to bottom as earnings, time not worke
 | P2 | Deductions needing consent could be added with no authorization. | The form requires it. Deductions without one are skipped and flagged on the payslip and profile. |
 
 Checked and passing: the settings dialog groups options under three short headings, and every option says what it changes; segmented choices replace selects where there are three or fewer options; deductions show in red with a true minus sign; no horizontal overflow on the payroll or profile pages.
+
+## Leave, employment terms and year-end review
+
+| Severity | Finding | Fix |
+| --- | --- | --- |
+| P1 | The request form said "17 of 20 days left" while the balance table said 17.5 available: the form counted December's credits in November. | Both now count credits earned by the leave's first day, and the form says the date it counts to. |
+| P1 | A half-day leave with a 1 PM time out still showed an hour of undertime, because the lunch hour was counted as time not worked. | Undertime counts scheduled minutes not worked, so the lunch break isn't charged. Covered by a test. |
+| P1 | The year-end table overflowed at 1440px with centavos in every cell. | Whole pesos in the table, centavos in the 2316 dialog, shorter column names, and Gross hides at smaller widths. |
+| P2 | Solo parent and VAWC leave showed as balances for everyone, which reads as if everyone is entitled to them. | They're listed under "Leave for specific situations", with who they're for, next to maternity, paternity and bereavement. |
+| P2 | Leave details in Approvals ran together on one line ("each time.For: …"). | Each fact is its own line: balance after approval, who it's for, documents to check. |
+| P2 | Alerts and statements printed ISO dates ("2026-12-15"). | All dates use the app's date format. |
+| P3 | "Request" buttons squeezed on narrow screens. | Buttons in the situations list no longer shrink. |
+
+Checked and passing:
+
+- Editing a statutory leave below the legal minimum is blocked with the law named in the error.
+- The final pay statement updates live as the reason, last day and notice date change, and says what's missing (for example, a loan without an authorization).
+- Employment alerts link to the person.
+- No horizontal overflow on My leave at 390px.

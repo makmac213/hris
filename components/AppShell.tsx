@@ -19,7 +19,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const activeOnboarding = db.onboarding_cases.filter((c) => c.status === "in_progress").length;
   const isManager = db.employees.some((e) => e.manager_id === me.id && e.status !== "offboarded");
-  const pendingForMe = [...db.overtime_requests, ...db.correction_requests].filter((r) => r.status === "pending" && canApprove(db, me, r.employee_id)).length;
+  const pendingForMe = [...db.overtime_requests, ...db.correction_requests, ...db.leave_requests].filter((r) => r.status === "pending" && canApprove(db, me, r.employee_id)).length;
 
   const groups: { title: string; items: NavItem[] }[] = canManage
     ? [
@@ -32,16 +32,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           { href: "/time", label: "Attendance", icon: "calendar", exact: true },
           { href: "/approvals", label: "Approvals", icon: "check", count: pendingForMe },
           { href: "/payroll", label: "Payroll", icon: "wallet" },
+          { href: "/leave", label: "Leave policies", icon: "sun" },
           { href: "/time/shift-codes", label: "Shift codes", icon: "shift" },
         ] },
         { title: "Me", items: [
           { href: "/my-time", label: "My time", icon: "clock" },
+          { href: "/my-leave", label: "My leave", icon: "sun" },
           { href: "/my-pay", label: "My pay", icon: "file" },
         ] },
       ]
     : [
         { title: "Me", items: [
           { href: "/my-time", label: "My time", icon: "clock" },
+          { href: "/my-leave", label: "My leave", icon: "sun" },
           { href: "/my-pay", label: "My pay", icon: "wallet" },
           ...(isManager ? [{ href: "/approvals", label: "Team approvals", icon: "check" as IconName, count: pendingForMe }] : []),
         ] },

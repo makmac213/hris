@@ -6,7 +6,11 @@ import {
   DEFAULT_SETTINGS, RULES, computePayslip, monthlyContributions, periodFor, sssMsc, thirteenthMonthPay, withholdingSemiMonthly, type Payslip,
 } from "@/lib/payroll";
 import { localToIso } from "@/lib/time";
-import type { Compensation, Database, Employee, Holiday, OvertimeRequest, PayItem, PayItemType, PayrollPeriod, PayrollSettings, ShiftCode, TimeRecord } from "@/lib/types";
+import { STATUTORY_LEAVES, grantedDays, leaveBalance, leaveTypesFor, validateLeave } from "@/lib/leave";
+import { creditedYears, legalStatus, probationEndFor } from "@/lib/employment";
+import { finalPay, retirementPay, separationPay } from "@/lib/finalpay";
+import { annualTax } from "@/lib/yearend";
+import type { Compensation, Database, Employee, Holiday, OvertimeRequest, PayItem, PayItemType, PayrollPeriod, PayrollSettings, ShiftCode, TimeRecord, LeaveType, LeaveRequest, PayrollOpening } from "@/lib/types";
 
 const TZ = "Asia/Manila";
 const DAY: ShiftCode = { id: "s-day", organization_id: "o", code: "PH-D0900", name: "Day", kind: "whole_day", start_time: "09:00", end_time: "18:00", break_minutes: 60, timezone: TZ, grace_minutes: 5, source: "system_default", is_default: true, archived_at: null };
@@ -14,7 +18,8 @@ const NIGHT: ShiftCode = { ...DAY, id: "s-night", code: "PH-N2200", start_time: 
 const NOW = "2027-01-31T00:00:00Z"; // every test day is in the past
 
 function emp(over: Partial<Employee> = {}): Employee {
-  return { id: "e1", organization_id: "o", employee_number: "1", first_name: "Ana", last_name: "Cruz", preferred_name: null, pronouns: null, work_email: "a@x", phone: null, job_title: "Analyst", department_id: null, location_id: null, manager_id: null, employment_type: "full_time", status: "active", start_date: "2025-01-01", end_date: null, avatar_url: null, role: "employee", shift_code_id: "s-day", ...over };
+  return { id: "e1", organization_id: "o", employee_number: "1", first_name: "Ana", last_name: "Cruz", preferred_name: null, pronouns: null, work_email: "a@x", phone: null, job_title: "Analyst", department_id: null, location_id: null, manager_id: null, employment_type: "full_time", status: "active", start_date: "2025-01-01", end_date: null, avatar_url: null, role: "employee", shift_code_id: "s-day",
+    employment_status_ph: "regular", probation_end_date: null, standards_given_on: "2025-01-01", contract_end_date: null, regularized_on: "2025-06-30", birth_date: null, separation_reason: null, separation_notice_date: null, ...over } as Employee;
 }
 function comp(over: Partial<Compensation> = {}): Compensation {
   return { id: "c1", employee_id: "e1", pay_basis: "monthly", rate: 30000, is_managerial: false, on_ph_payroll: true, effective_from: "2025-01-01", ...over };
@@ -49,11 +54,12 @@ function ot(date: string, from: string, to: string, status: OvertimeRequest["sta
 function payItem(over: Partial<PayItem>): PayItem {
   return { id: `pi${++rid}`, type_id: null, employee_id: "e1", direction: "earning", category: "taxable_allowance", de_minimis_kind: null, label: "Item", amount: 1000, schedule: "every_cutoff", start_date: "2026-01-01", end_date: null, installments: null, authorization: null, created_by: "hr", created_at: NOW, ...over };
 }
-function db(o: { employee?: Partial<Employee>; comp?: Partial<Compensation>; records?: TimeRecord[]; ot?: OvertimeRequest[]; holidays?: Holiday[]; settings?: Partial<PayrollSettings>; items?: PayItem[]; overrides?: Database["employee_payroll_settings"]; shifts?: ShiftCode[]; types?: PayItemType[] } = {}): Database {
+function db(o: { employee?: Partial<Employee>; comp?: Partial<Compensation>; records?: TimeRecord[]; ot?: OvertimeRequest[]; holidays?: Holiday[]; settings?: Partial<PayrollSettings>; items?: PayItem[]; overrides?: Database["employee_payroll_settings"]; shifts?: ShiftCode[]; types?: PayItemType[]; leaveTypes?: LeaveType[]; leave?: LeaveRequest[]; openings?: PayrollOpening[] } = {}): Database {
   return {
     departments: [], locations: [], employees: [emp(o.employee)], employment_events: [], employee_documents: [], onboarding_template_tasks: [], onboarding_cases: [], onboarding_tasks: [],
     shift_codes: o.shifts ?? [DAY, NIGHT], time_records: o.records ?? [], compensation: [comp(o.comp)], holidays: o.holidays ?? [], overtime_requests: o.ot ?? [], correction_requests: [], payroll_periods: [],
     payroll_settings: { ...DEFAULT_SETTINGS, sss_basis: "monthly_rate", ...o.settings }, employee_payroll_settings: o.overrides ?? [], pay_items: o.items ?? [], pay_item_types: o.types ?? [],
+    leave_types: o.leaveTypes ?? [], leave_requests: o.leave ?? [], leave_adjustments: [], payroll_openings: o.openings ?? [],
   };
 }
 const P = (date: string): PayrollPeriod => ({ ...periodFor(date), status: "open", finalized_at: null, finalized_by: null });
@@ -429,4 +435,152 @@ test("an inactive type stops applying", () => {
 test("company practice can add a type to the 13th month base", () => {
   const types = [ptype({ counts_for_13th: true, default_amount: 1000 })]; // 24 cutoffs × ₱1,000
   near(thirteenthMonthPay(db({ types }), emp(), 2026), (30000 * 12 + 24000) / 12);
+});
+
+
+// ---- Leave, employment terms, final pay and year-end tax ---------------------------
+
+const VL: LeaveType = { ...STATUTORY_LEAVES[0], id: "lt-vl", name: "Vacation leave", statutory: false, legal_basis: null, legal_min_days: 0, days: 15, accrual: "monthly", min_service_months: 6, convertible: true, carry_over_max: 5, counts_as_sil: true };
+const LWOP: LeaveType = { ...VL, id: "lt-lwop", name: "Leave without pay", days: 30, accrual: "per_event", paid: false, convertible: false, counts_as_sil: false, carry_over_max: 0, min_service_months: 0 };
+const leaveTypes = [...STATUTORY_LEAVES, VL, LWOP];
+function lv(type: string, start: string, end = start, over: Partial<LeaveRequest> = {}): LeaveRequest {
+  return { id: `lv${++rid}`, employee_id: "e1", leave_type_id: type, start_date: start, end_date: end, half_day: false, reason: "r", status: "approved", filed_at: NOW, decided_by: "m", decided_at: NOW, decision_note: null, ...over };
+}
+
+test("an approved paid leave day is not an absence", () => {
+  const full = slip(db({ records: present(B0, B1) }), B0);
+  const s = slip(db({ records: present(B0, B1, ["2026-11-18"]), leave: [lv("lt-vl", "2026-11-18")], leaveTypes }), B0);
+  assert.equal(line(s.deductions, "absent"), 0);
+  near(s.gross, full.gross);
+});
+
+test("leave without pay is deducted like an absence and labeled", () => {
+  const s = slip(db({ records: present(B0, B1, ["2026-11-18"]), leave: [lv("lt-lwop", "2026-11-18")], leaveTypes }), B0);
+  near(line(s.deductions, "lwop"), DAILY);
+  assert.equal(line(s.deductions, "absent"), 0);
+});
+
+test("a paid half-day leave covers the afternoon: leaving at 1 PM costs nothing", () => {
+  const recs = [...present(B0, B1, ["2026-11-18"]), ...rec("2026-11-18", "08:58", "13:00")];
+  const s = slip(db({ records: recs, leave: [lv("lt-vl", "2026-11-18", "2026-11-18", { half_day: true })], leaveTypes }), B0);
+  near(line(s.deductions, "undertime"), 0);
+});
+
+test("paid leave on the workday before a regular holiday keeps the holiday paid (hourly)", () => {
+  const hol: Holiday[] = [{ date: "2026-11-30", name: "Bonifacio Day", kind: "regular" }];
+  const s = slip(db({ comp: { pay_basis: "hourly", rate: 120 }, records: present(B0, "2026-11-26"), holidays: hol, leave: [lv("lt-vl", "2026-11-27")], leaveTypes }), B0);
+  assert.ok(line(s.earnings, "holiday-unworked") > 0, "holiday should be paid");
+  assert.ok(line(s.earnings, "leave-paid") > 0, "the leave day is paid");
+});
+
+test("monthly leave accrues 1.25 days a month and waits for six months of service", () => {
+  const e = emp({ start_date: "2020-01-06" });
+  assert.equal(grantedDays(VL, e, 2026, "2026-06-30"), 7.5);
+  const joiner = emp({ start_date: "2026-03-01" });
+  assert.equal(grantedDays(VL, joiner, 2026, "2026-09-20"), 0, "eligible Sept 1; nothing earned until a full month passes");
+  assert.equal(grantedDays(VL, joiner, 2026, "2026-12-31"), 5, "four full months, Sept to Dec");
+  const d = db({ employee: { start_date: "2026-11-03" }, leaveTypes });
+  assert.match(validateLeave(d, d.employees[0], VL, "2026-12-01", "2026-12-01", false, "2026-11-27").type ?? "", /6 months/);
+});
+
+test("statutory leave is a full yearly entitlement once eligible; SIL is replaced by a vacation leave of 5+ days", () => {
+  const solo = STATUTORY_LEAVES.find((t) => t.id === "lt-solo")!;
+  assert.equal(grantedDays(solo, emp({ start_date: "2026-01-05" }), 2026, "2026-08-01"), 7);
+  const d = db({ leaveTypes });
+  assert.ok(!leaveTypesFor(d).some((t) => t.id === "lt-sil"));
+  assert.ok(leaveTypesFor(db({ leaveTypes: STATUTORY_LEAVES })).some((t) => t.id === "lt-sil"));
+});
+
+test("leave can only use credits earned by its first day", () => {
+  const d = db({ employee: { start_date: "2020-01-06" }, leaveTypes });
+  const e = d.employees[0];
+  assert.equal(leaveBalance(d, e, VL, 2026, "2026-02-28").granted, 2.5);
+  assert.ok(validateLeave(d, e, VL, "2026-03-02", "2026-03-13", false, "2026-02-20").type, "10 days in early March is more than 2.5 + 5 carried");
+  assert.deepEqual(validateLeave(d, e, VL, "2026-03-02", "2026-03-06", false, "2026-02-20"), {});
+});
+
+test("probation: no written standards, or past 180 days, means regular", () => {
+  const base = { employment_status_ph: "probationary" as const, start_date: "2026-01-05" };
+  assert.equal(legalStatus(emp({ ...base, standards_given_on: null }), "2026-03-01").status, "regular");
+  assert.equal(legalStatus(emp({ ...base, standards_given_on: "2026-01-05" }), "2026-03-01").status, "probationary");
+  assert.equal(legalStatus(emp({ ...base, standards_given_on: "2026-01-05", probation_end_date: probationEndFor("2026-01-05") }), "2026-07-10").status, "regular");
+  assert.equal(legalStatus(emp({ employment_status_ph: "casual", start_date: "2025-01-05" }), "2026-01-06").status, "regular");
+});
+
+test("service years: six months or more counts as a whole year", () => {
+  assert.equal(creditedYears("2020-01-01", "2024-07-01"), 5);
+  assert.equal(creditedYears("2020-01-01", "2024-06-30"), 4);
+});
+
+test("separation pay follows Art. 298–299", () => {
+  const d = db({ employee: { start_date: "2023-01-02" } });
+  const e = d.employees[0];
+  near(separationPay(d, e, "2026-01-30", "redundancy").amount, 3 * 30000); // 3 years × 1 month
+  near(separationPay(d, e, "2026-01-30", "retrenchment").amount, 1.5 * 30000); // 3 × ½ month
+  near(separationPay(d, { ...e, start_date: "2025-01-06" }, "2026-01-30", "retrenchment").amount, 30000); // floor of one month
+  assert.equal(separationPay(d, e, "2026-01-30", "closure_losses").amount, 0);
+  assert.equal(separationPay(d, e, "2026-01-30", "resignation").amount, 0);
+});
+
+test("retirement pay is 22.5 days a year at 60 with 5 years (RA 7641)", () => {
+  const d = db({ employee: { start_date: "2016-01-04", birth_date: "1965-05-01" } });
+  const r = retirementPay(d, d.employees[0], "2026-06-30");
+  assert.ok(r.eligible);
+  near(r.amount, 22.5 * DAILY * 10);
+  assert.ok(!retirementPay(d, { ...d.employees[0], birth_date: "1970-01-01" }, "2026-06-30").eligible);
+});
+
+test("annual tax table, 2023 onward", () => {
+  assert.equal(annualTax(250000), 0);
+  assert.equal(annualTax(400000), 22500);
+  assert.equal(annualTax(800000), 102500);
+  assert.equal(annualTax(1000000), 152500);
+  assert.equal(annualTax(2500000), 552500);
+});
+
+test("the last payroll of the year annualizes and can refund", () => {
+  // Joined Dec 1: two cutoffs of ₱15,000 a year is far below ₱250,000, so whatever was withheld comes back.
+  const d = db({ employee: { start_date: "2026-12-01" }, records: present("2026-12-01", "2026-12-31") });
+  const first = computePayslip(d, d.employees[0], P("2026-12-01"), NOW)!;
+  const last = slip(d, "2026-12-16");
+  near(last.tax, -first.tax);
+  assert.ok(last.flags.some((f) => f.includes("refund")));
+});
+
+test("annualization uses the year-to-date imported at go-live", () => {
+  const opening: PayrollOpening = { employee_id: "e1", year: 2026, through_date: "2026-11-30", taxable_compensation: 300000, tax_withheld: 0, non_taxable_benefits: 0, mandatory_contributions: 0, basic_pay: 330000, thirteenth_paid: 0 };
+  const d = db({ records: present("2026-12-01", "2026-12-31"), openings: [opening] });
+  const dec1 = computePayslip(d, d.employees[0], P("2026-12-01"), NOW)!;
+  const last = slip(d, "2026-12-16");
+  near(last.tax, annualTax(300000 + dec1.taxable + last.taxable) - dec1.tax);
+});
+
+test("unused vacation leave is paid in cash in December: 12 days tax-free, carry-over kept", () => {
+  const d = db({ employee: { start_date: "2020-01-06" }, records: present("2026-12-16", "2026-12-31"), leaveTypes });
+  const s = slip(d, "2026-12-16");
+  const cash = line(s.additions, "leave-cash-lt-vl");
+  near(cash, 15 * DAILY, "20 available (15 + 5 carried), 5 kept"); // 15 days paid
+});
+
+test("regional minimum wage follows the work location", () => {
+  const d = db({ employee: { location_id: "loc-ceb" }, comp: { rate: 12000 } });
+  d.locations = [{ id: "loc-ceb", organization_id: "o", name: "Cebu", city: "Cebu", country_code: "PH", timezone: TZ, is_remote: false, ph_region: "VII" }];
+  const s = slip(d, B0);
+  assert.equal(s.minimumWage.daily, 582);
+  assert.ok(s.belowMinimum, "₱12,000 a month is ₱551.72 a day, under ₱582");
+});
+
+test("final pay: pro-rated 13th month, leave cash, and only authorized loan balances deducted", () => {
+  const items = [
+    payItem({ direction: "deduction", category: "company_loan", label: "Laptop loan", amount: 1000, start_date: "2026-10-01", installments: 10, authorization: "signed" }),
+    payItem({ direction: "deduction", category: "company_loan", label: "Advance", amount: 500, start_date: "2026-10-01", installments: 10 }),
+  ];
+  const d = db({ employee: { start_date: "2024-01-08" }, records: present("2026-11-16", "2026-11-30"), items, leaveTypes });
+  const fp = finalPay(d, d.employees[0], "2026-11-30", "resignation", NOW, "2026-10-30");
+  near(fp.lines.find((l) => l.key === "13th")!.amount, 30000 * (334 / (365 / 12)) / 12);
+  assert.ok(fp.lines.some((l) => l.key === "leave-lt-vl"));
+  assert.equal(fp.deductions.length, 1);
+  near(fp.deductions[0].amount, 1000 * (10 - 4)); // 4 cutoffs paid Oct 1 – Nov 30
+  assert.ok(fp.checks.some((c) => !c.ok && c.text.includes("Advance")));
+  assert.ok(fp.checks.some((c) => c.ok && c.text.includes("31 days")));
 });

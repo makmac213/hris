@@ -5,9 +5,10 @@
 // (and React Query / server actions) without touching the views.
 
 import { useSyncExternalStore } from "react";
-import type { AppRole, Compensation, CorrectionKind, CorrectionRequest, Database, Employee, EmployeePayrollSettings, OnboardingCase, OnboardingTask, OvertimeRequest, PayItem, PayItemType, PayrollSettings, ShiftCode, TimeRecord } from "./types";
+import type { LeaveAdjustment, LeaveRequest, LeaveType, SeparationReason, AppRole, Compensation, CorrectionKind, CorrectionRequest, Database, Employee, EmployeePayrollSettings, OnboardingCase, OnboardingTask, OvertimeRequest, PayItem, PayItemType, PayrollSettings, ShiftCode, TimeRecord } from "./types";
 import { zoned } from "./time";
 import { buildOnboardingTasks, ORG_ID, seed, TEMPLATE_ID, TODAY } from "./mock-data";
+import { probationEndFor } from "./employment";
 
 let db: Database = seed;
 const listeners = new Set<() => void>();
@@ -115,6 +116,15 @@ export interface NewEmployeeInput {
   employment_type: Employee["employment_type"];
 }
 
+/** New hires in a Philippine office start on probation. Standards must be given in writing on day one (Art. 296). */
+function phTermsForNewHire(locationId: string, start: string): Pick<Employee, "employment_status_ph" | "probation_end_date" | "standards_given_on" | "contract_end_date" | "regularized_on" | "birth_date" | "separation_reason" | "separation_notice_date"> {
+  const ph = !!db.locations.find((l) => l.id === locationId)?.ph_region;
+  return {
+    employment_status_ph: ph ? "probationary" : null, probation_end_date: ph ? probationEndFor(start) : null, standards_given_on: null,
+    contract_end_date: null, regularized_on: null, birth_date: null, separation_reason: null, separation_notice_date: null,
+  };
+}
+
 export function createEmployee(input: NewEmployeeInput): Employee {
   const n = db.employees.length + 1;
   const id = `e${String(n).padStart(2, "0")}x${Date.now().toString(36)}`;
@@ -131,6 +141,7 @@ export function createEmployee(input: NewEmployeeInput): Employee {
     avatar_url: null,
     role: "employee",
     shift_code_id: db.shift_codes.find((s) => s.is_default)?.id ?? null,
+    ...phTermsForNewHire(input.location_id, input.start_date),
   };
   const kase: OnboardingCase = {
     id: `ob-${id}`, employee_id: id, template_id: TEMPLATE_ID, buddy_id: null, status: "in_progress", created_at: TODAY,
@@ -358,4 +369,53 @@ export function savePayItemType(row: Omit<PayItemType, "id"> & { id?: string }):
   const exists = db.pay_item_types.some((t) => t.id === saved.id);
   commit({ ...db, pay_item_types: exists ? db.pay_item_types.map((t) => (t.id === saved.id ? saved : t)) : [...db.pay_item_types, saved] });
   return saved;
+}
+
+// ---- Leave -----------------------------------------------------------------------
+
+export function fileLeave(input: Pick<LeaveRequest, "employee_id" | "leave_type_id" | "start_date" | "end_date" | "half_day" | "reason">): LeaveRequest {
+  const row: LeaveRequest = { ...input, id: `lv-${Date.now().toString(36)}`, status: "pending", filed_at: new Date().toISOString(), decided_by: null, decided_at: null, decision_note: null };
+  commit({ ...db, leave_requests: [...db.leave_requests, row] });
+  return row;
+}
+
+export function cancelLeave(id: string) {
+  commit({ ...db, leave_requests: db.leave_requests.map((r) => (r.id === id && r.status === "pending" ? { ...r, status: "cancelled" as const } : r)) });
+}
+
+export function decideLeave(id: string, approverId: string, approve: boolean, note: string | null) {
+  const decided = { status: approve ? ("approved" as const) : ("rejected" as const), decided_by: approverId, decided_at: new Date().toISOString(), decision_note: note };
+  commit({ ...db, leave_requests: db.leave_requests.map((r) => (r.id === id ? { ...r, ...decided } : r)) });
+}
+
+/** Saves a leave policy. Statutory types can be made more generous, never less (enforced in the form and here). */
+export function saveLeaveType(row: Omit<LeaveType, "id"> & { id?: string }): LeaveType {
+  const id = row.id ?? `lt-${Date.now().toString(36)}`;
+  const safe: LeaveType = { ...row, id, days: Math.max(row.days, row.legal_min_days) };
+  commit({ ...db, leave_types: db.leave_types.some((t) => t.id === id) ? db.leave_types.map((t) => (t.id === id ? safe : t)) : [...db.leave_types, safe] });
+  return safe;
+}
+
+export function adjustLeave(input: Omit<LeaveAdjustment, "id">) {
+  commit({ ...db, leave_adjustments: [...db.leave_adjustments, { ...input, id: `la-${Date.now().toString(36)}` }] });
+}
+
+// ---- Employment terms and separation ----------------------------------------------
+
+export function regularize(id: string, on: string) {
+  const e = db.employees.find((x) => x.id === id)!;
+  commit({
+    ...db,
+    employees: db.employees.map((x) => (x.id === id ? { ...x, employment_status_ph: "regular" as const, regularized_on: on, contract_end_date: null } : x)),
+    employment_events: [...db.employment_events, { id: `ev-${id}-reg-${on}`, employee_id: id, effective_date: on, kind: "regularized", job_title: e.job_title, department_id: e.department_id, note: "Regularized" }],
+  });
+}
+
+export function separateEmployee(id: string, lastDay: string, reason: SeparationReason, noticeDate: string | null) {
+  const e = db.employees.find((x) => x.id === id)!;
+  commit({
+    ...db,
+    employees: db.employees.map((x) => (x.id === id ? { ...x, end_date: lastDay, separation_reason: reason, separation_notice_date: noticeDate, status: lastDay < TODAY ? "offboarded" as const : x.status } : x)),
+    employment_events: [...db.employment_events, { id: `ev-${id}-sep-${lastDay}`, employee_id: id, effective_date: lastDay, kind: "separated", job_title: e.job_title, department_id: e.department_id, note: null }],
+  });
 }

@@ -7,13 +7,15 @@ import { shiftHours } from "@/lib/time";
 import { displayName, employmentTypeLabel, formatBytes, formatDate, legalName, statusLabel, tenure } from "@/lib/format";
 import type { Employee, EmploymentStatus } from "@/lib/types";
 import { PayTab } from "./PayTab";
+import { EmploymentTerms, LeaveTab } from "./EmploymentTab";
 import { Avatar, Button, Dialog, EmptyState, Field, Icon, PersonCell, Progress, StatusBadge } from "@/components/ui";
 
-type Tab = "overview" | "employment" | "documents" | "pay";
+type Tab = "overview" | "employment" | "leave" | "documents" | "pay";
 
 const eventLabel: Record<string, string> = {
   hired: "Joined", promotion: "Promoted", transfer: "Left the company", title_change: "Title changed",
   manager_change: "Manager changed", leave: "Started leave", return: "Returned from leave",
+  regularized: "Became a regular employee", separated: "Last day",
 };
 
 export function ProfileView({ id }: { id: string }) {
@@ -48,6 +50,7 @@ export function ProfileView({ id }: { id: string }) {
   const docs = db.employee_documents.filter((d) => d.employee_id === e.id);
   const shift = db.shift_codes.find((s) => s.id === e.shift_code_id);
   const canSeeDocs = canManage || viewer.id === e.id;
+  const onPh = db.compensation.some((c) => c.employee_id === e.id && c.on_ph_payroll);
   const localTime = loc && !loc.is_remote
     ? new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: loc.timezone }).format(new Date())
     : null;
@@ -89,7 +92,7 @@ export function ProfileView({ id }: { id: string }) {
       )}
 
       <div className="tabs" role="tablist" aria-label="Profile sections">
-        {(["overview", "employment", "documents", "pay"] as Tab[]).filter((t) => (t !== "documents" || canSeeDocs) && (t !== "pay" || canManage)).map((t) => (
+        {(["overview", "employment", "leave", "documents", "pay"] as Tab[]).filter((t) => (t !== "documents" || canSeeDocs) && (t !== "pay" || canManage) && (t !== "leave" || (onPh && (canManage || viewer.id === e.id)))).map((t) => (
           <button
             key={t}
             type="button"
@@ -100,7 +103,7 @@ export function ProfileView({ id }: { id: string }) {
             className={tab === t ? "tab tab-on" : "tab"}
             onClick={() => setTab(t)}
           >
-            {t === "overview" ? "Overview" : t === "employment" ? "Employment history" : t === "pay" ? "Pay" : `Documents (${docs.length})`}
+            {t === "overview" ? "Overview" : t === "employment" ? "Employment" : t === "leave" ? "Leave" : t === "pay" ? "Pay" : `Documents (${docs.length})`}
           </button>
         ))}
       </div>
@@ -175,7 +178,10 @@ export function ProfileView({ id }: { id: string }) {
       )}
 
       {tab === "employment" && (
-        <section className="panel" role="tabpanel" id="panel-employment" aria-labelledby="tab-employment">
+        <div className="stack-lg" role="tabpanel" id="panel-employment" aria-labelledby="tab-employment">
+        {canManage && <EmploymentTerms employee={e} />}
+        <section className="panel">
+          <h2>History</h2>
           <ol className="timeline">
             {events.map((ev) => (
               <li key={ev.id}>
@@ -190,7 +196,10 @@ export function ProfileView({ id }: { id: string }) {
             ))}
           </ol>
         </section>
+        </div>
       )}
+
+      {tab === "leave" && <LeaveTab employee={e} canAdjust={canManage} />}
 
       {tab === "pay" && canManage && <PayTab employee={e} />}
 

@@ -4,6 +4,9 @@
 import type { Compensation, Database, DeMinimisKind, DeductionCategory, Employee, EmployeePayrollSettings, Holiday, OvertimeRequest, PayItem, PayItemType, PayrollPeriod, PayrollSettings, ShiftCode, TimeRecord } from "./types";
 import { addDays } from "./format";
 import { isWeekend, localToIso, spanMinutes, zoned } from "./time";
+import { convertibleDays, leaveByDate, SIL_ID } from "./leave";
+import { annualTax, isLastPeriodOfYear, yearToDate } from "./yearend";
+import { wageFor } from "./regions";
 
 export const RULES = {
   minimumWage: { region: "NCR", daily: 755, effective: "2026-09-26", source: "Wage Order No. NCR-28" },
@@ -48,10 +51,12 @@ export const RULES = {
     ot_meal: { cap: 0, per: "ot_day", label: "Overtime or night-shift meal allowance" }, // 30% of the basic daily wage per day
   } as Record<DeMinimisKind, { cap: number; per: "month" | "semester" | "year" | "ot_day"; label: string }>,
   otMealShareOfDaily: 0.3,
+  monetizedLeaveTaxFreeDays: 12, // RR 29-2025: monetized unused vacation leave of private employees, up to 12 days a year
   lossDamageMaxShare: 0.2, // Art. 114–115, IRR Book III Rule VIII §14: ≤ 20% of the employee's wages in a week
 } as const;
 
 export const DEFAULT_SETTINGS: PayrollSettings = {
+  use_regional_minimum_wage: true,
   workdays_per_year: 261,
   minimum_wage_daily: 755,
   minimum_wage_label: "NCR, Wage Order No. NCR-28",
@@ -194,6 +199,7 @@ export interface DayCalc {
   unapprovedExtraMin: number; // time recorded outside the schedule without an approved OT request (not paid)
   pendingOtMin: number;
   incomplete: boolean; // timed in but no time out: unpaid until a correction is approved
+  leave: { name: string; paid: boolean; half: boolean } | null;
   segments: Segment[];
 }
 
@@ -246,6 +252,7 @@ export function effectiveInOut(records: TimeRecord[]) {
 
 export interface DayContext {
   holidayOn: (date: string) => Holiday | undefined;
+  leaveOn?: (date: string) => { type: { name: string }; paid: boolean; half: boolean } | undefined;
   prevWorkdayPresent: boolean;
   nowMs: number;
   managerial: boolean;
@@ -270,8 +277,10 @@ export function computeDay(
 
   const base: DayCalc = {
     date, type, holiday, future: false, scheduledMin: 0, workedMin: 0, lateMin: 0, undertimeMin: 0, absent: false,
-    holidayPaidUnworked: false, specialUnworked: false, otMin: 0, nsdMin: 0, unapprovedExtraMin: 0, pendingOtMin: 0, incomplete: false, segments: [],
+    holidayPaidUnworked: false, specialUnworked: false, otMin: 0, nsdMin: 0, unapprovedExtraMin: 0, pendingOtMin: 0, incomplete: false, leave: null, segments: [],
   };
+  const lv = !rest ? ctx.leaveOn?.(date) : undefined;
+  if (lv) base.leave = { name: lv.type.name, paid: lv.paid, half: lv.half };
 
   let schedStart = 0, schedEnd = 0;
   if (shift && !rest) {
@@ -299,7 +308,9 @@ export function computeDay(
     }
     const late = Math.round((inMs - schedStart) / 60000);
     base.lateMin = late > shift.grace_minutes ? late : 0;
-    base.undertimeMin = Math.max(0, Math.round((schedEnd - outMs) / 60000));
+    // Leaving early counts the scheduled minutes not worked, so leaving at noon isn't also charged for the lunch break.
+    const clockUndertime = Math.max(0, Math.round((schedEnd - outMs) / 60000));
+    base.undertimeMin = Math.min(clockUndertime, Math.max(0, base.scheduledMin - base.workedMin - Math.max(0, late)));
   } else if (shift && !rest && !base.future && inMs && !outMs) {
     const late = Math.round((inMs - schedStart) / 60000);
     base.lateMin = late > shift.grace_minutes ? late : 0;
@@ -308,7 +319,14 @@ export function computeDay(
   } else if (shift && !rest && !base.future && !inMs) {
     if (type === "regular") base.holidayPaidUnworked = ctx.prevWorkdayPresent; // Art. 94; successive-holiday rule handled by the caller
     else if (type === "special") base.specialUnworked = true;
-    else base.absent = true;
+    else if (!lv || !lv.paid || lv.half) base.absent = true; // paid leave isn't an absence; unpaid leave is, and so is the other half of a half day
+  }
+  // A paid half-day leave covers half the schedule: take it off undertime first, then late.
+  if (lv?.paid && lv.half && (inMs || base.absent)) {
+    let cover = base.scheduledMin / 2;
+    if (base.absent) { base.absent = false; base.undertimeMin = base.scheduledMin - cover; cover = 0; }
+    const u = Math.min(cover, base.undertimeMin); base.undertimeMin -= u; cover -= u;
+    base.lateMin = Math.max(0, base.lateMin - cover);
   }
 
   // Overtime: only approved requests, and only the minutes the time records show were worked (Art. 87).
@@ -510,6 +528,8 @@ export interface Payslip {
   tax: number;
   net: number;
   mwe: boolean;
+  minimumWage: { daily: number; label: string };
+  belowMinimum: boolean;
   flags: string[];
   pendingRequests: number;
 }
@@ -528,20 +548,32 @@ function employeeSettings(db: Database, employeeId: string, s: PayrollSettings) 
   };
 }
 
-/** Was the employee present on their last scheduled workday before `date`? */
+/** The minimum wage that applies to this person: their work location's region, or the company figure. */
+export function minimumWageFor(db: Database, employee: Employee): { daily: number; label: string } {
+  const s = db.payroll_settings ?? DEFAULT_SETTINGS;
+  if (s.use_regional_minimum_wage) {
+    const loc = db.locations.find((l) => l.id === employee.location_id);
+    const w = wageFor(loc?.ph_region);
+    if (w) return { daily: w.daily, label: `${w.name}, Wage Order No. ${w.wageOrder}` };
+  }
+  return { daily: s.minimum_wage_daily, label: s.minimum_wage_label };
+}
+
+/** Was the employee present (or on paid leave) on their last scheduled workday before `date`? */
 function presentOnLastWorkday(db: Database, employee: Employee, shift: ShiftCode | undefined, date: string) {
+  const leave = leaveByDate(db, employee.id);
   for (let d = addDays(date, -1), i = 0; i < 14; d = addDays(d, -1), i++) {
     if (d < employee.start_date) return true; // no workday before: not held against a new joiner
     if (isWeekend(d)) continue;
     const h = db.holidays.find((x) => x.date === d && x.kind !== "special_working");
     const worked = db.time_records.some((r) => r.employee_id === employee.id && r.work_date === d && r.kind === "clock_in");
     if (h) { if (worked) return true; continue; } // successive holidays: working the earlier one counts
-    return worked;
+    return worked || !!leave.get(d)?.paid; // paid leave the day before counts as present
   }
   return true;
 }
 
-export interface PayslipOptions { basisOnly?: boolean }
+export interface PayslipOptions { basisOnly?: boolean; noAnnualize?: boolean }
 
 export function computePayslip(db: Database, employee: Employee, period: PayrollPeriod, nowIso: string, opts: PayslipOptions = {}): Payslip | null {
   const settings = db.payroll_settings ?? DEFAULT_SETTINGS;
@@ -551,14 +583,19 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
   const rt = rates(comp, shift, settings);
   const nowMs = Date.parse(nowIso);
   const flags: string[] = [];
-  const mwe = isMinimumWageEarner(comp, shift, settings);
+  const minWage = minimumWageFor(db, employee);
+  const wageSettings = { ...settings, minimum_wage_daily: minWage.daily };
+  const mwe = isMinimumWageEarner(comp, shift, wageSettings);
+  const below = belowMinimumWage(comp, shift, wageSettings);
   const managerial = comp.is_managerial;
-  if (belowMinimumWage(comp, shift, settings)) flags.push(`Daily rate ₱${rt.daily.toFixed(2)} is below the ₱${settings.minimum_wage_daily} minimum (${settings.minimum_wage_label}).`);
+  if (below) flags.push(`Daily rate ₱${rt.daily.toFixed(2)} is below the ₱${minWage.daily} minimum (${minWage.label}).`);
   if (!shift) flags.push("No shift code, so no scheduled time can be paid. Assign one before finalizing.");
 
   const recs = db.time_records.filter((r) => r.employee_id === employee.id);
   const ot = db.overtime_requests.filter((r) => r.employee_id === employee.id);
   const holidayOn = (d: string) => db.holidays.find((h) => h.date === d);
+  const leaves = leaveByDate(db, employee.id);
+  const leaveOn = (d: string) => leaves.get(d);
   const days: DayCalc[] = [];
   let prevPresent = presentOnLastWorkday(db, employee, shift, period.start_date);
   for (const d of datesIn(period)) {
@@ -568,10 +605,10 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
       d, shift, dayRecs,
       ot.filter((r) => r.work_date === d && r.status === "approved"),
       ot.filter((r) => r.work_date === d && r.status === "pending"),
-      { holidayOn, prevWorkdayPresent: prevPresent, nowMs, managerial },
+      { holidayOn, leaveOn, prevWorkdayPresent: prevPresent, nowMs, managerial },
     );
     days.push(day);
-    const worked = dayRecs.some((r) => r.kind === "clock_in");
+    const worked = dayRecs.some((r) => r.kind === "clock_in") || !!leaves.get(d)?.paid;
     // Art. 94 IRR: presence is judged on the workday before. Rest days are skipped; for successive holidays,
     // an employee absent before the first is still paid the second if they work the first.
     if (day.type === "ordinary") prevPresent = worked || day.future;
@@ -598,12 +635,14 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
     const tardy = !managerial || settings.deduct_managerial_tardiness;
     const late = tardy ? days.reduce((n, d) => n + d.lateMin, 0) : 0;
     const under = tardy ? days.reduce((n, d) => n + d.undertimeMin, 0) : 0;
-    const absentDays = days.filter((d) => d.absent);
+    const absentDays = days.filter((d) => d.absent && !d.leave);
+    const lwopDays = days.filter((d) => d.absent && d.leave && !d.leave.paid);
     const holidayUnpaid = managerial ? [] : days.filter((d) => d.type === "regular" && !d.holidayPaidUnworked && !d.future && d.workedMin === 0 && !d.incomplete && shift);
     const specialUnpaid = settings.pay_unworked_special_days ? [] : days.filter((d) => d.specialUnworked);
     if (late) deductions.push({ key: "late", label: "Late", detail: `${hrs(late)} · actual minutes only, no fines`, amount: late * minRate });
     if (under) deductions.push({ key: "undertime", label: "Undertime", detail: `${hrs(under)} · can’t be offset by overtime (Art. 88)`, amount: under * minRate });
     if (absentDays.length) deductions.push({ key: "absent", label: "Absences", detail: `${absentDays.length} day${absentDays.length > 1 ? "s" : ""} · no work, no pay`, amount: absentDays.reduce((n, d) => n + d.scheduledMin, 0) * minRate });
+    if (lwopDays.length) deductions.push({ key: "lwop", label: "Leave without pay", detail: `${lwopDays.length} day${lwopDays.length > 1 ? "s" : ""} · ${[...new Set(lwopDays.map((d) => d.leave!.name))].join(", ")}`, amount: lwopDays.reduce((n, d) => n + d.scheduledMin, 0) * minRate });
     if (holidayUnpaid.length) deductions.push({ key: "holiday-ineligible", label: "Unpaid regular holiday", detail: "Absent on the workday before (Art. 94)", amount: holidayUnpaid.length * rt.scheduledDaily });
     if (specialUnpaid.length) deductions.push({ key: "special-unworked", label: "Special day not worked", detail: `${specialUnpaid.length} day · no work, no pay (company setting)`, amount: specialUnpaid.reduce((n, d) => n + d.scheduledMin, 0) * minRate });
     // Time not worked can't take basic pay below zero (e.g. absent for the whole cutoff).
@@ -616,6 +655,8 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
   } else {
     const worked = regSegs.reduce((n, s) => n + s.min, 0);
     earnings.push({ key: "basic", label: "Basic pay", detail: `${hrs(worked)} × ₱${rt.hourly.toFixed(2)}`, amount: worked * minRate });
+    const paidLeave = days.filter((d) => d.leave?.paid && !d.workedMin && !d.future);
+    if (paidLeave.length) earnings.push({ key: "leave-paid", label: "Paid leave", detail: `${paidLeave.reduce((n, d) => n + (d.leave!.half ? 0.5 : 1), 0)} day · ${[...new Set(paidLeave.map((d) => d.leave!.name))].join(", ")}`, amount: paidLeave.reduce((n, d) => n + (d.leave!.half ? d.scheduledMin / 2 : d.scheduledMin), 0) * minRate });
     const hol = managerial ? [] : days.filter((d) => d.holidayPaidUnworked);
     if (hol.length) earnings.push({ key: "holiday-unworked", label: "Regular holiday pay (not worked)", detail: `${hol.length} day · 100% (Art. 94)`, amount: hol.reduce((n, d) => n + d.scheduledMin, 0) * minRate });
     const spc = settings.pay_unworked_special_days ? days.filter((d) => d.specialUnworked) : [];
@@ -674,6 +715,25 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
   }
   nonTaxable += dm.exempt;
   poolThis += dm.excess;
+
+  // Year-end leave conversion: unused convertible days paid in cash in the last payroll of the year (Art. 95 for SIL;
+  // company policy for the rest). Up to 12 days of vacation leave a year is de minimis (RR 29-2025); the excess joins the
+  // ₱90,000 pool. Other monetized leave (e.g. sick leave) is taxable. People who leave get it in their final pay instead.
+  const yearEnd = isLastPeriodOfYear(period) && !employee.end_date && !opts.basisOnly;
+  if (yearEnd) {
+    const year = Number(period.start_date.slice(0, 4));
+    let vlDaysLeft = RULES.monetizedLeaveTaxFreeDays;
+    for (const { type, days } of convertibleDays(db, employee, year, period.end_date)) {
+      const amount = days * rt.daily;
+      const vacation = type.counts_as_sil || type.id === SIL_ID;
+      const free = vacation ? Math.min(days, vlDaysLeft) : 0;
+      vlDaysLeft -= free;
+      const exempt = free * rt.daily;
+      nonTaxable += exempt;
+      if (vacation) poolThis += amount - exempt; else taxableAdditions += amount;
+      additions.push({ key: `leave-cash-${type.id}`, label: `${type.name}, unused days paid in cash`, detail: `${days} day${days === 1 ? "" : "s"} × ${peso(rt.daily)}${vacation ? `; up to ${RULES.monetizedLeaveTaxFreeDays} days a year tax-free (RR 29-2025)` : "; taxable"}`, amount });
+    }
+  }
 
   // 13th month: added automatically to the last payroll paid on or before December 24 (PD 851).
   if (period.start_date.endsWith("-12-01") && !opts.basisOnly) {
@@ -755,7 +815,16 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
   const otherTaxable = taxableAdditions + poolTaxable + employerPaidEeShare;
   // Minimum wage earners are exempt on the minimum wage, holiday pay, OT, NSD and hazard pay; other income is still taxed.
   const taxable = Math.max(0, (mwe ? otherTaxable : statutoryPay + otherTaxable - mandatoryEe) - unionDues);
-  const tax = withholdingSemiMonthly(taxable);
+  let tax = withholdingSemiMonthly(taxable);
+  // Year-end annualization: the last payroll of the year withholds the difference between the tax due on the year's
+  // income and what was already withheld. A negative figure is a refund of excess withholding (RR 2-98 Sec. 2.79(B)(5)).
+  if (yearEnd && !opts.noAnnualize) {
+    const year = Number(period.start_date.slice(0, 4));
+    const ytd = yearToDate(db, employee, year, period.start_date, nowIso);
+    const due = annualTax(ytd.taxable + taxable);
+    tax = due - ytd.taxWithheld;
+    if (tax < 0) flags.push(`Year-end refund of ${peso(-tax)}: more tax was withheld this year than is due on ${peso(ytd.taxable + taxable)} of taxable pay.`);
+  }
 
   // ---- Loans and other deductions, within what's left ----
   const otherDeductions: PayLine[] = [];
@@ -794,7 +863,7 @@ export function computePayslip(db: Database, employee: Employee, period: Payroll
     earnings: round(earnings), deductions: round(deductions), additions: round(additions),
     contributions: round(contributions), otherDeductions: round(otherDeductions), deferred: round(deferred), employer: round(employer),
     gross: r2(gross), compensationForSss: r2(compensationForSss), nonTaxable: r2(nonTaxable), taxable: r2(taxable), tax: r2(tax), net: r2(net),
-    mwe, flags, pendingRequests,
+    mwe, minimumWage: minWage, belowMinimum: below, flags, pendingRequests,
   };
 }
 

@@ -2,7 +2,7 @@
 
 November 2026. This reviews the payroll engine (`lib/payroll.ts`) against Philippine labor, contribution and tax rules. It lists what was wrong before this review, what is now fixed, what the company has to decide, and what is still not covered. Rules and sources are in [payroll rules](payroll-rules.md).
 
-> **Bottom line.** Pay for time, holidays, overtime, night work, contributions and withholding tax now follow the rules listed in [payroll rules](payroll-rules.md). Every edge case below has an automated test (`npm test`, 50 tests). Some things are still missing before real payroll can run: leave, year-end tax annualization and BIR forms, final pay, and regional wage rates outside NCR. A Philippine payroll accountant also needs to sign off on the items marked "verify".
+> **Bottom line.** Pay for time, holidays, overtime, night work, contributions and withholding tax now follow the rules listed in [payroll rules](payroll-rules.md). Every edge case below has an automated test (`npm test`, 67 tests). Leave, year-end annualization, final pay and regional minimum wages are now built too. Still missing before real payroll: remittance reports and BIR file formats, double holidays, and hazard pay and service charges. A Philippine payroll accountant also needs to sign off on the items marked "verify".
 
 ## What was wrong, and is now fixed
 
@@ -123,25 +123,36 @@ See `tests/payroll.test.ts`. Each line is one test.
   - added to the December payroll
   - the managers setting
 
+- Leave, employment terms, final pay and year-end tax:
+  - paid leave isn't an absence; leave without pay is deducted
+  - a paid half day covers leaving at 1 PM
+  - paid leave before a regular holiday keeps the holiday paid
+  - monthly accrual and the six-month wait
+  - statutory leave isn't prorated; SIL is replaced by vacation leave of 5+ days
+  - leave can only use credits earned by its first day
+  - probation without written standards, or past 180 days, is regular; casual after a year is regular
+  - six months or more counts as a year of service
+  - separation pay by reason (Art. 298–299)
+  - retirement pay of 22.5 days a year (RA 7641)
+  - the annual tax table
+  - December annualization: refund for a December joiner, and the go-live year-to-date
+  - December leave cash conversion with carry-over kept
+  - regional minimum wage from the work location
+  - final pay: pro-rated 13th month, leave cash, and only authorized loan balances
+
 ## Not covered yet
 
 These are needed before real payroll runs.
 
-1. **Leave.**
-   - Service incentive leave (5 days, Art. 95).
-   - Maternity, paternity, solo parent and VAWC leave.
-   - Paid leave the day before a holiday, which counts as present.
-   - Leave pay inside the 13th month base.
-2. **Year-end tax.** Annualization in the last payroll of the year, BIR Form 2316, 1601-C monthly remittance and the alphalist.
-3. **Final pay.** Last salary, prorated 13th month, unused leave conversion and tax refund, released within 30 days (DOLE Labor Advisory 06-20).
-4. **Regional minimum wages** by work location. Only one rate is configured now.
-5. **Other holiday cases.**
+Leave, year-end tax, final pay and regional minimum wages are now built. See [leave rules](leave-rules.md), [year-end tax](year-end-tax.md), [final pay](final-pay.md) and [employment terms](employment-rules.md).
+
+1. **Other holiday cases.**
    - Two regular holidays on the same date (300%).
    - Unworked regular holiday that falls on a rest day for daily-paid staff (**verify**).
    - Rest-day classification for night shifts that cross into a rest day. Only holidays are split at midnight.
-6. **Other pay.** Hazard pay, service charges (RA 11360), COLA, and compressed workweek arrangements.
-7. **Remittance.** SSS, PhilHealth and Pag-IBIG reports and due dates. Loan billing reconciliation.
-8. **History.** Year-to-date figures (de minimis ceilings, the ₱90,000 pool, the 13th month base) only cover what's recorded in the app. Year-to-date figures from before go-live need to be imported.
+2. **Other pay.** Hazard pay, service charges (RA 11360), COLA, and compressed workweek arrangements.
+3. **Remittance.** SSS, PhilHealth and Pag-IBIG reports and due dates. Loan billing reconciliation.
+4. **History.** Year-to-date figures (de minimis ceilings, the ₱90,000 pool, the 13th month base) only cover what's recorded in the app. Year-to-date figures from before go-live are imported as payroll openings (seeded for Manila staff through Oct 31, 2026); a screen to import them is still to build.
 
 ## Verify with a payroll accountant
 

@@ -55,4 +55,4 @@ Compensation is set for the 14 Manila staff (three managerial, one hourly). Pay 
 
 Schema: `0003_payroll.sql` (compensation, holidays, overtime_requests, time_correction_requests, payroll_periods, payroll_items, payroll_settings, employee_payroll_settings, pay_items, and `time_records.source`).
 
-Tests: `npm test` runs 44 edge-case tests of the engine (`tests/payroll.test.ts`).
+Tests: `npm test` runs 67 edge-case tests of the engine (`tests/payroll.test.ts`).

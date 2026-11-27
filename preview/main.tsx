@@ -15,6 +15,9 @@ import { ApprovalsView } from "@/features/requests/ApprovalsView";
 import { PayrollView } from "@/features/payroll/PayrollView";
 import { MyPayView } from "@/features/payroll/MyPayView";
 import { PayTypesView } from "@/features/payroll/PayTypesView";
+import { YearEndView } from "@/features/payroll/YearEndView";
+import { MyLeaveView } from "@/features/leave/MyLeaveView";
+import { LeavePoliciesView } from "@/features/leave/LeavePoliciesView";
 import { usePathname } from "./shims/navigation";
 
 function Routes() {
@@ -31,6 +34,9 @@ function Routes() {
   else if (parts[0] === "my-time") view = <MyTimeView />;
   else if (parts[0] === "approvals") view = <ApprovalsView />;
   else if (parts[0] === "payroll" && parts[1] === "pay-types") view = <PayTypesView />;
+  else if (parts[0] === "payroll" && parts[1] === "year-end") view = <YearEndView />;
+  else if (parts[0] === "my-leave") view = <MyLeaveView />;
+  else if (parts[0] === "leave") view = <LeavePoliciesView />;
   else if (parts[0] === "payroll") view = <PayrollView />;
   else if (parts[0] === "my-pay") view = <MyPayView />;
   else view = <DirectoryView />;

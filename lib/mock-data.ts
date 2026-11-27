@@ -22,9 +22,15 @@ import type {
   EmployeePayrollSettings,
   PayItem,
   PayItemType,
+  LeaveType,
+  LeaveRequest,
+  LeaveAdjustment,
+  PayrollOpening,
 } from "./types";
-import { DEFAULT_SETTINGS, periodFor } from "./payroll";
+import { DEFAULT_SETTINGS, monthlyContributions, periodFor, withholdingSemiMonthly } from "./payroll";
 import { addDays } from "./format";
+import { probationEndFor } from "./employment";
+import { STATUTORY_LEAVES } from "./leave";
 import { isWeekend, localToIso, phDefaultCodes, spanMinutes, zoned } from "./time";
 
 // Sample company for the prototype. All people are fictional.
@@ -45,11 +51,12 @@ const departments: Department[] = [
 ].map(([id, name, head]) => ({ id, organization_id: ORG_ID, name, head_id: head }));
 
 const locations: Location[] = [
-  { id: "loc-mnl", organization_id: ORG_ID, name: "Manila", city: "Makati", country_code: "PH", timezone: "Asia/Manila", is_remote: false },
-  { id: "loc-sin", organization_id: ORG_ID, name: "Singapore", city: "Singapore", country_code: "SG", timezone: "Asia/Singapore", is_remote: false },
-  { id: "loc-syd", organization_id: ORG_ID, name: "Sydney", city: "Sydney", country_code: "AU", timezone: "Australia/Sydney", is_remote: false },
-  { id: "loc-sfo", organization_id: ORG_ID, name: "San Francisco", city: "San Francisco", country_code: "US", timezone: "America/Los_Angeles", is_remote: false },
-  { id: "loc-remote", organization_id: ORG_ID, name: "Remote", city: null, country_code: null, timezone: "UTC", is_remote: true },
+  { id: "loc-mnl", organization_id: ORG_ID, name: "Manila", city: "Makati", country_code: "PH", timezone: "Asia/Manila", is_remote: false, ph_region: "NCR" },
+  { id: "loc-ceb", organization_id: ORG_ID, name: "Cebu", city: "Cebu City", country_code: "PH", timezone: "Asia/Manila", is_remote: false, ph_region: "VII" },
+  { id: "loc-sin", organization_id: ORG_ID, name: "Singapore", city: "Singapore", country_code: "SG", timezone: "Asia/Singapore", is_remote: false, ph_region: null },
+  { id: "loc-syd", organization_id: ORG_ID, name: "Sydney", city: "Sydney", country_code: "AU", timezone: "Australia/Sydney", is_remote: false, ph_region: null },
+  { id: "loc-sfo", organization_id: ORG_ID, name: "San Francisco", city: "San Francisco", country_code: "US", timezone: "America/Los_Angeles", is_remote: false, ph_region: null },
+  { id: "loc-remote", organization_id: ORG_ID, name: "Remote", city: null, country_code: null, timezone: "UTC", is_remote: true, ph_region: null },
 ];
 
 type Row = [
@@ -86,7 +93,7 @@ const rows: Row[] = [
   ["e26", "Ethan", "Brooks", "Account Executive", "dep-sales", "loc-sfo", "e11", "2022-10-03"],
   ["e27", "Zara", "Ahmed", "Account Executive", "dep-sales", "loc-sin", "e11", "2023-05-08"],
   ["e28", "Lucía", "Fernández", "Head of Customer Success", "dep-cs", "loc-syd", "e11", "2022-01-24"],
-  ["e29", "Nathan", "Cruz", "Customer Success Manager", "dep-cs", "loc-mnl", "e28", "2023-09-04"],
+  ["e29", "Nathan", "Cruz", "Customer Success Manager", "dep-cs", "loc-ceb", "e28", "2023-09-04"],
   ["e30", "Chloe", "Martin", "Support Specialist", "dep-cs", "loc-syd", "e28", "2024-06-17"],
   ["e31", "Samuel", "Osei", "Head of Marketing", "dep-marketing", "loc-remote", "e01", "2022-07-11"],
   ["e32", "Bea", "Lim", "Content Lead", "dep-marketing", "loc-mnl", "e31", "2023-04-24"],
@@ -124,6 +131,19 @@ const SHIFT_ASSIGNMENTS: Record<string, string> = {
 const slug = (s: string) =>
   s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z]+/g, "");
 
+// Philippine employment terms. Everyone in a Philippine office is regular after a six-month probation,
+// except the scripted cases below so each rule shows up somewhere.
+const PH_TERMS: Record<string, Partial<Employee>> = {
+  e02: { birth_date: "1964-03-10" }, // 62: eligible for retirement pay (RA 7641)
+  e04: { birth_date: "1979-08-22" },
+  e25: { employment_status_ph: "fixed_term", contract_end_date: "2026-12-15", regularized_on: null, probation_end_date: null }, // part-time, one-year contract
+  e32: { employment_status_ph: "project", contract_end_date: null, regularized_on: null, probation_end_date: null }, // project with no end date: flagged
+  e34: { employment_status_ph: "probationary", standards_given_on: null, regularized_on: null }, // starts Dec 1, standards not yet given
+  e37: { employment_status_ph: "probationary", standards_given_on: "2026-11-03", regularized_on: null }, // on probation until May 1, 2027
+};
+
+const isPhLocation = (loc: string) => loc === "loc-mnl" || loc === "loc-ceb";
+
 const employees: Employee[] = rows.map(([id, first, last, title, dep, loc, manager, start, status = "active", type = "full_time", pronouns]) => ({
   id,
   organization_id: ORG_ID,
@@ -145,6 +165,15 @@ const employees: Employee[] = rows.map(([id, first, last, title, dep, loc, manag
   avatar_url: null,
   role: (ROLES[id] ?? "employee") as AppRole,
   shift_code_id: SHIFT_ASSIGNMENTS[id] ?? null,
+  employment_status_ph: isPhLocation(loc) ? "regular" : null,
+  probation_end_date: isPhLocation(loc) ? probationEndFor(start) : null,
+  standards_given_on: isPhLocation(loc) ? start : null,
+  contract_end_date: null,
+  regularized_on: isPhLocation(loc) ? addDays(probationEndFor(start), 1) : null,
+  birth_date: null,
+  separation_reason: status === "offboarded" ? "resignation" : null,
+  separation_notice_date: status === "offboarded" ? "2026-08-31" : null,
+  ...(PH_TERMS[id] ?? {}),
 }));
 
 const employment_events: EmploymentEvent[] = [];
@@ -266,6 +295,7 @@ export const SEED_NOW = new Date().toISOString();
 
 const OFFICE_GPS: Record<string, [number, number]> = {
   "loc-mnl": [14.5547, 121.0244],
+  "loc-ceb": [10.3181, 123.9050],
   "loc-sin": [1.283, 103.851],
   "loc-syd": [-33.8688, 151.2093],
 };
@@ -325,6 +355,8 @@ function buildTimeRecords(nowIso: string): TimeRecord[] {
       const r = (k: string) => rand(`${e.id}${day}${k}`);
       // Scripted exceptions so every rule shows up somewhere.
       if (e.id === "e13" && day === W(3)) continue; // absent
+      if (e.id === "e08" && (day === W(4) || day === W(3))) continue; // approved vacation leave
+      if (e.id === "e29" && day === W(7)) continue; // approved leave without pay
       if (e.id === "e32" && day === today) continue; // hasn't timed in yet
       let inOffset = Math.round(-14 + r("in") * 16); // mostly up to 14 minutes early
       if (e.id === "e16" && (day === W(4) || day === today)) inOffset = 18 + Math.round(r("late") * 10);
@@ -335,6 +367,7 @@ function buildTimeRecords(nowIso: string): TimeRecord[] {
       if (e.id === "e13" && day === W(5)) outOffset = 152; // stayed for a release (approved OT)
       if (e.id === "e16" && day === W(1)) outOffset = 95; // OT filed, pending
       if (e.id === "e19" && day === W(6)) outOffset = 100; // OT filed, rejected
+      if (e.id === "e22" && day === W(2)) outOffset = 240 - spanMinutes(shift); // half-day sick leave, left at noon
 
       const startIso = at(day, shift.start_time, shift.timezone);
       const inAt = Date.parse(startIso) + inOffset * 60000;
@@ -442,6 +475,59 @@ const pay_items: PayItem[] = [
   item("pi-adv-e37", "e37", "pt-advance", 3000, { label: "Emergency cash advance", start_date: P1, installments: 2, authorization: "Signed authorization, Nov 14, 2026" }),
 ];
 
+// ---- Leave ------------------------------------------------------------------------
+// Statutory leave is the floor; Halden adds its own on top. Vacation leave (15 days) replaces service incentive leave.
+
+const L = (id: string, name: string, extra: Partial<LeaveType>): LeaveType => ({
+  id, name, statutory: false, legal_basis: null, legal_min_days: 0, days: 0, accrual: "annual", calendar_days: false, min_service_months: 0,
+  paid: true, convertible: false, carry_over_max: 0, counts_as_sil: false, requires_document: null, who: null, description: null, active: true, ...extra,
+});
+const leave_types: LeaveType[] = [
+  L("lt-vl", "Vacation leave", { days: 15, accrual: "monthly", min_service_months: 6, convertible: true, carry_over_max: 5, counts_as_sil: true, who: "Everyone after six months", description: "1.25 days a month. Up to 5 unused days roll over; the rest are paid in cash in the December 16–31 payroll. Replaces service incentive leave." }),
+  L("lt-sl", "Sick leave", { days: 15, accrual: "monthly", min_service_months: 6, requires_document: "Medical certificate for two or more days in a row", who: "Everyone after six months" }),
+  L("lt-bereave", "Bereavement leave", { days: 3, accrual: "per_event", requires_document: "Death certificate", who: "Death of a spouse, child, parent or sibling" }),
+  L("lt-birthday", "Birthday leave", { days: 1, who: "Everyone, in their birthday month" }),
+  L("lt-lwop", "Leave without pay", { days: 30, accrual: "per_event", paid: false, who: "Anyone, with manager approval", description: "Not paid, and not counted toward the 13th month." }),
+  ...STATUTORY_LEAVES.map((t) => t.id === "lt-paternity" ? { ...t, days: 10, description: "Halden gives 10 days, 3 more than the law." } : t),
+];
+
+const LR = (id: string, employee_id: string, leave_type_id: string, start_date: string, end_date: string, status: LeaveRequest["status"], reason: string, extra: Partial<LeaveRequest> = {}): LeaveRequest => ({
+  id, employee_id, leave_type_id, start_date, end_date, half_day: false, reason, status, filed_at: at(addDays(start_date, -10), "09:00"),
+  decided_by: status === "pending" ? null : "e10", decided_at: status === "pending" ? null : at(addDays(start_date, -8), "10:00"), decision_note: null, ...extra,
+});
+const leave_requests: LeaveRequest[] = [
+  LR("lv-1", "e08", "lt-vl", W(4), W(3), "approved", "Family trip to Bohol"),
+  LR("lv-2", "e22", "lt-sl", W(2), W(2), "approved", "Dental procedure in the afternoon", { half_day: true }),
+  LR("lv-3", "e29", "lt-lwop", W(7), W(7), "approved", "Moving house; I’ve used my vacation leave"),
+  LR("lv-4", "e04", "lt-vl", "2026-08-10", "2026-08-14", "approved", "Vacation"),
+  LR("lv-5", "e10", "lt-vl", "2026-04-27", "2026-04-30", "approved", "Holy Week extension"),
+  LR("lv-6", "e19", "lt-vl", "2026-10-19", "2026-10-23", "rejected", "Trip to Japan", { decision_note: "That's the product launch week. Can you move it to November?" }),
+  LR("lv-7", "e16", "lt-vl", "2026-12-21", "2026-12-23", "pending", "Christmas in Ilocos"),
+  LR("lv-8", "e13", "lt-vl", "2026-12-28", "2026-12-29", "pending", "Year-end break"),
+  LR("lv-9", "e21", "lt-bereave", addDays(TODAY_LOCAL, 3), addDays(TODAY_LOCAL, 5), "pending", "My grandmother’s wake and burial in Iloilo"),
+];
+
+const leave_adjustments: LeaveAdjustment[] = [
+  { id: "la-1", employee_id: "e10", leave_type_id: "lt-vl", year: 2026, days: 2, note: "Five-year service award" },
+  { id: "la-2", employee_id: "e13", leave_type_id: "lt-vl", year: 2025, days: 3, note: "Unused 2025 balance at go-live" },
+];
+
+// Year-to-date payroll before Halden went live on Nov 1, 2026 (from the previous payroll provider).
+const payroll_openings: PayrollOpening[] = compensation.filter((c) => c.employee_id !== "e34" && c.employee_id !== "e37").map((c) => {
+  const e = employees.find((x) => x.id === c.employee_id)!;
+  const monthly = c.pay_basis === "monthly" ? c.rate : c.rate * 4 * 22;
+  const k = monthlyContributions(monthly);
+  const mandatory = (k.sssEe + k.phEe + k.pagEe) * 10;
+  const basic = monthly * 10;
+  const taxable = basic - mandatory;
+  const tax = withholdingSemiMonthly(taxable / 20) * 20;
+  return {
+    employee_id: e.id, year: 2026, through_date: "2026-10-31", taxable_compensation: Math.round(taxable * 100) / 100,
+    tax_withheld: Math.round(tax * 100) / 100, non_taxable_benefits: e.id === "e19" ? 42500 : 0, mandatory_contributions: Math.round(mandatory * 100) / 100,
+    basic_pay: basic, thirteenth_paid: 0,
+  };
+});
+
 export const seed: Database = {
   departments,
   locations,
@@ -462,4 +548,8 @@ export const seed: Database = {
   employee_payroll_settings,
   pay_items,
   pay_item_types,
+  leave_types,
+  leave_requests,
+  leave_adjustments,
+  payroll_openings,
 };

@@ -5,9 +5,10 @@ import { useMemo, useState } from "react";
 import { finalizePayroll, useCurrentUser, useDb } from "@/lib/store";
 import { displayName, formatDate } from "@/lib/format";
 import { zoned } from "@/lib/time";
-import { RULES, SOURCES, belowMinimumWage, computePayslip, peso, thirteenthMonthEstimate, type Payslip as PayslipData } from "@/lib/payroll";
+import { RULES, SOURCES, computePayslip, peso, thirteenthMonthEstimate, type Payslip as PayslipData } from "@/lib/payroll";
 import { Button, Dialog, EmptyState, Icon, PersonCell } from "@/components/ui";
 import { Payslip } from "./Payslip";
+import { employmentAlerts } from "@/lib/employment";
 import { PayrollSettingsDialog } from "./SettingsDialog";
 
 export function PayrollView() {
@@ -47,7 +48,7 @@ export function PayrollView() {
   const flagged = slips.filter((s) => s.flags.some((f) => !f.includes("waiting for approval")));
   const notOnPayroll = db.employees.filter((e) => (e.status === "active" || e.status === "onboarding") && !db.compensation.some((c) => c.employee_id === e.id)).length;
   const cutoffPassed = today > period.end_date;
-  const canFinalize = period.status === "open" && cutoffPassed && pending === 0 && !slips.some((s) => belowMinimumWage(s.comp, s.shift, settings));
+  const canFinalize = period.status === "open" && cutoffPassed && pending === 0 && !slips.some((s) => s.belowMinimum);
   const finalizeBlock = period.status !== "open" ? null : !cutoffPassed ? `You can finalize after the cutoff on ${formatDate(period.end_date)}.` : pending ? `Decide the ${pending} pending ${pending === 1 ? "request" : "requests"} first.` : null;
 
   const year = Number(period.start_date.slice(0, 4));
@@ -74,6 +75,7 @@ export function PayrollView() {
         </div>
         <div className="head-actions">
           <Link href="/payroll/pay-types" className="btn btn-secondary btn-md">Pay types</Link>
+          <Link href="/payroll/year-end" className="btn btn-secondary btn-md">Year-end tax</Link>
           <Button variant="secondary" onClick={() => setSettingsOpen(true)}>Payroll settings</Button>
         {period.status === "open" && (
           <div className="finalize">
@@ -113,17 +115,24 @@ export function PayrollView() {
           {pending > 0 && (
             <p className="check check-warn"><Icon name="alert" size={18} /> <span>{pending} overtime or correction {pending === 1 ? "request is" : "requests are"} waiting. They aren’t paid until approved. <Link href="/approvals" className="link">Review requests</Link></span></p>
           )}
+          {(() => {
+            const alerts = employmentAlerts(db, today).filter((a) => a.severity === "danger" || a.message.startsWith("Probation ends") || a.message.startsWith("Contract ends"));
+            return alerts.length ? (
+              <p className="check check-warn"><Icon name="alert" size={18} /> <span>Employment terms to act on: {alerts.map((a, i) => <span key={i}>{i ? " " : ""}<Link className="link" href={`/employees/${a.employee.id}`}>{displayName(a.employee)}</Link>: {a.message}</span>)}</span></p>
+            ) : null;
+          })()}
           {flagged.length > 0 && (
             <p className="check check-warn"><Icon name="alert" size={18} /> <span>{flagged.length} {flagged.length === 1 ? "payslip needs" : "payslips need"} a look: {flagged.map((s) => displayName(s.employee)).join(", ")}.</span></p>
           )}
         </div>
       )}
       {(() => {
-        const below = slips.filter((s) => belowMinimumWage(s.comp, s.shift, settings));
+        const below = slips.filter((s) => s.belowMinimum);
+        const wages = [...new Set(slips.map((s) => `${peso(s.minimumWage.daily)} (${s.minimumWage.label})`))];
         return below.length ? (
-          <p className="check check-danger"><Icon name="alert" size={18} /> <span>{below.map((s) => displayName(s.employee)).join(", ")} {below.length === 1 ? "is" : "are"} paid below the {peso(settings.minimum_wage_daily)} daily minimum ({settings.minimum_wage_label}). Fix the rate before finalizing.</span></p>
+          <p className="check check-danger"><Icon name="alert" size={18} /> <span>{below.map((s) => `${displayName(s.employee)} (minimum ${peso(s.minimumWage.daily)}, ${s.minimumWage.label})`).join("; ")} {below.length === 1 ? "is" : "are"} paid below the daily minimum wage. Fix the rate before finalizing.</span></p>
         ) : (
-          <p className="check check-ok"><Icon name="check" size={18} /> <span>Everyone is at or above the {peso(settings.minimum_wage_daily)} daily minimum ({settings.minimum_wage_label}).</span></p>
+          <p className="check check-ok"><Icon name="check" size={18} /> <span>Everyone is at or above the daily minimum wage where they work: {wages.join("; ")}.</span></p>
         );
       })()}
       {period.end_date.slice(5, 7) === "11" || period.end_date.slice(5, 7) === "12" ? (

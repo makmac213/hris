@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { canApprove, decideRequest, isPeriodLocked, useCurrentUser, useDb } from "@/lib/store";
+import { canApprove, decideLeave, decideRequest, isPeriodLocked, today, useCurrentUser, useDb } from "@/lib/store";
 import { displayName, formatDate } from "@/lib/format";
 import { formatDuration, formatInstant } from "@/lib/time";
 import { effectiveInOut } from "@/lib/payroll";
-import type { CorrectionRequest, Employee, OvertimeRequest } from "@/lib/types";
+import type { CorrectionRequest, Employee, LeaveRequest, OvertimeRequest } from "@/lib/types";
+import { leaveBalance, requestDays } from "@/lib/leave";
 import { Button, EmptyState, Icon, PersonCell } from "@/components/ui";
 import { ProofPhoto } from "@/features/time/shared";
 import { RequestStatusBadge } from "./MyRequests";
@@ -14,7 +15,11 @@ import { correctionKindLabel } from "./RequestDialogs";
 
 type Item =
   | { type: "overtime"; r: OvertimeRequest; e: Employee }
-  | { type: "correction"; r: CorrectionRequest; e: Employee };
+  | { type: "correction"; r: CorrectionRequest; e: Employee }
+  | { type: "leave"; r: LeaveRequest; e: Employee };
+
+const dateOf = (it: Item) => (it.type === "leave" ? it.r.start_date : it.r.work_date);
+const kindLabel = { overtime: "overtime", correction: "time correction", leave: "leave" };
 
 export function ApprovalsView() {
   const db = useDb();
@@ -27,6 +32,7 @@ export function ApprovalsView() {
   const items: Item[] = [
     ...db.overtime_requests.map((r) => ({ type: "overtime" as const, r, e: db.employees.find((x) => x.id === r.employee_id)! })),
     ...db.correction_requests.map((r) => ({ type: "correction" as const, r, e: db.employees.find((x) => x.id === r.employee_id)! })),
+    ...db.leave_requests.map((r) => ({ type: "leave" as const, r, e: db.employees.find((x) => x.id === r.employee_id)! })),
   ].filter((it) => it.e && canApprove(db, me, it.e.id));
 
   const pending = items.filter((it) => it.r.status === "pending").sort((a, b) => a.r.filed_at.localeCompare(b.r.filed_at));
@@ -38,9 +44,10 @@ export function ApprovalsView() {
   }
 
   const decide = (it: Item, approve: boolean) => {
-    decideRequest(it.type, it.r.id, me.id, approve, approve ? null : note.trim());
+    if (it.type === "leave") decideLeave(it.r.id, me.id, approve, approve ? null : note.trim());
+    else decideRequest(it.type, it.r.id, me.id, approve, approve ? null : note.trim());
     setRejecting(null); setNote("");
-    setDone(`${approve ? "Approved" : "Rejected"} ${displayName(it.e)}’s ${it.type === "overtime" ? "overtime" : "time correction"}.${approve && it.type === "correction" ? " The corrected time now counts for attendance and payroll." : ""}`);
+    setDone(`${approve ? "Approved" : "Rejected"} ${displayName(it.e)}’s ${kindLabel[it.type]}.${approve && it.type === "correction" ? " The corrected time now counts for attendance and payroll." : ""}${approve && it.type === "leave" ? " It now shows in attendance and payroll." : ""}`);
   };
 
   const list = tab === "pending" ? pending : decided;
@@ -52,7 +59,7 @@ export function ApprovalsView() {
           <h1>Approvals</h1>
           <p className="muted">
             {me.role === "employee" ? "Requests from your direct reports." : "Requests from everyone. Managers can also approve for their own teams."}
-            {" "}Overtime is paid only once approved.
+            {" "}Overtime is paid only once approved. Approved leave shows in attendance and payroll.
           </p>
         </div>
       </header>
@@ -71,24 +78,26 @@ export function ApprovalsView() {
 
       {list.length === 0 ? (
         <div className="section">
-          <EmptyState title={tab === "pending" ? "You’re all caught up" : "Nothing decided yet"} body={tab === "pending" ? "New overtime and time correction requests from your people will show up here." : "Requests you approve or reject will be listed here."} />
+          <EmptyState title={tab === "pending" ? "You’re all caught up" : "Nothing decided yet"} body={tab === "pending" ? "New leave, overtime and time correction requests from your people will show up here." : "Requests you approve or reject will be listed here."} />
         </div>
       ) : (
         <ul className="approvals">
           {list.map((it) => {
             const tz = db.shift_codes.find((s) => s.id === it.e.shift_code_id)?.timezone ?? "Asia/Manila";
-            const recs = db.time_records.filter((r) => r.employee_id === it.e.id && r.work_date === it.r.work_date);
+            const recs = db.time_records.filter((r) => r.employee_id === it.e.id && r.work_date === dateOf(it));
             const { clockIn, clockOut } = effectiveInOut(recs);
-            const locked = isPeriodLocked(db, it.r.work_date);
+            const locked = isPeriodLocked(db, dateOf(it));
             return (
               <li key={it.r.id} className="approval">
                 <div className="approval-head">
                   <PersonCell person={it.e} sub={it.e.job_title} />
-                  <span className="approval-kind">{it.type === "overtime" ? "Overtime" : "Time correction"} · {formatDate(it.r.work_date)}</span>
+                  <span className="approval-kind">{it.type === "overtime" ? "Overtime" : it.type === "leave" ? "Leave" : "Time correction"} · {formatDate(dateOf(it))}</span>
                 </div>
 
                 {it.type === "overtime" ? (
                   <OvertimeDetail r={it.r} tz={tz} clockIn={clockIn?.recorded_at} clockOut={clockOut?.recorded_at} />
+                ) : it.type === "leave" ? (
+                  <LeaveDetail r={it.r} e={it.e} />
                 ) : (
                   <div className="approval-body">
                     <p className="approval-what">
@@ -135,6 +144,31 @@ export function ApprovalsView() {
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+function LeaveDetail({ r, e }: { r: LeaveRequest; e: Employee }) {
+  const db = useDb();
+  const t = db.leave_types.find((x) => x.id === r.leave_type_id);
+  if (!t) return null;
+  const days = requestDays(db, r);
+  const year = Number(r.start_date.slice(0, 4));
+  const b = leaveBalance(db, e, t, year, r.start_date > today() ? r.start_date : today()); // credits earned by the first day
+  const after = b.available - (r.status === "pending" ? days : 0);
+  return (
+    <div className="approval-body">
+      <p className="approval-what">
+        <strong>{t.name}</strong>: <strong className="num">{r.start_date === r.end_date ? formatDate(r.start_date) : `${formatDate(r.start_date)} to ${formatDate(r.end_date)}`}</strong>
+        {" "}· {r.half_day ? "half day" : `${days} ${t.calendar_days ? "calendar " : ""}day${days === 1 ? "" : "s"}`}{t.paid ? "" : ", unpaid"}
+      </p>
+      <ul className="leave-facts">
+        {t.accrual === "per_event"
+          ? <li className="muted">Up to {t.days} days each time{t.legal_basis ? ` (${t.legal_basis})` : ""}.</li>
+          : <li className={after < 0 ? "text-danger" : "muted"}>{b.available} days available by {formatDate(r.start_date)}; {after} left after this{after < 0 ? ". Not enough credits." : "."}</li>}
+        {t.who && <li className="muted">For: {t.who}</li>}
+        {t.requires_document && <li className="muted">Check: {t.requires_document}</li>}
+      </ul>
     </div>
   );
 }

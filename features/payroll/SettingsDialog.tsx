@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { updatePayrollSettings, useDb } from "@/lib/store";
+import { REGIONAL_WAGES } from "@/lib/regions";
 import { peso } from "@/lib/payroll";
 import type { PayrollSettings } from "@/lib/types";
 import { Button, Dialog, Field } from "@/components/ui";
@@ -25,11 +26,11 @@ export function Choice<T extends string | number>({ legend, value, options, onCh
   );
 }
 
-export function Toggle({ label, checked, onChange, hint }: { label: string; checked: boolean; onChange: (v: boolean) => void; hint?: ReactNode }) {
+export function Toggle({ label, checked, onChange, hint, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; hint?: ReactNode; disabled?: boolean }) {
   return (
     <div className="span-2 toggle-row">
       <label>
-        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+        <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
         <span>{label}</span>
       </label>
       {hint && <p className="field-hint">{hint}</p>}
@@ -91,7 +92,34 @@ export function PayrollSettingsDialog({ onClose }: { onClose: () => void }) {
         <Toggle label="Pay 13th month to managerial staff" checked={f.thirteenth_month_for_managerial} onChange={(v) => set("thirteenth_month_for_managerial", v)} hint="PD 851 requires it for rank-and-file staff. Paying managers is company policy." />
 
         <h3 className="span-2 settings-h">Minimum wage</h3>
-        <Field label="Daily minimum wage" hint={error || `Currently ${peso(f.minimum_wage_daily)} · ${f.minimum_wage_label}`} error={error || undefined}>
+        <Toggle
+          label="Use the regional minimum wage of each person’s work location"
+          checked={f.use_regional_minimum_wage}
+          onChange={(v) => set("use_regional_minimum_wage", v)}
+          hint="Wage orders are set per region by the Regional Tripartite Wages and Productivity Boards. Locations without a region use the figure below."
+        />
+        {f.use_regional_minimum_wage && (
+          <div className="span-2 region-table-wrap">
+            <table className="table region-table">
+              <caption className="sr-only">Regional daily minimum wages</caption>
+              <thead><tr><th scope="col">Region</th><th scope="col" className="num">Daily</th><th scope="col">Wage order</th><th scope="col">Your locations</th></tr></thead>
+              <tbody>
+                {REGIONAL_WAGES.map((w) => {
+                  const locs = db.locations.filter((l) => l.ph_region === w.region).map((l) => l.name);
+                  return (
+                    <tr key={w.region} className={locs.length ? "" : "row-muted"}>
+                      <td>{w.name}{w.note && <span className="cell-sub">{w.note}</span>}</td>
+                      <td className="num">{peso(w.daily)}</td>
+                      <td>{w.wageOrder} · from {w.effective}</td>
+                      <td>{locs.join(", ") || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <Field label={f.use_regional_minimum_wage ? "Fallback daily minimum wage" : "Daily minimum wage"} hint={error || `Currently ${peso(f.minimum_wage_daily)} · ${f.minimum_wage_label}`} error={error || undefined}>
           {(id, d) => <input id={id} aria-describedby={d} inputMode="decimal" value={wage} onChange={(e) => { setWage(e.target.value); setError(""); }} />}
         </Field>
         <Field label="Wage order">

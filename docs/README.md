@@ -10,6 +10,10 @@ All planning and documentation for the project lives here. Start with the roadma
 | [Design critique](design-critique.md) | Each review against impeccable.style, with the findings and fixes |
 | [Payroll rules](payroll-rules.md) | Philippine labor and tax rules the payroll follows, with sources |
 | [Payroll compliance audit](payroll-compliance-audit.md) | What was checked, what was fixed, company settings, edge cases tested, and what's still missing |
+| [Leave rules](leave-rules.md) | Statutory leave as the floor, company leave on top, and how leave reaches payroll |
+| [Employment terms](employment-rules.md) | Probationary, regular, project, seasonal, casual and fixed-term rules, and separation reasons |
+| [Final pay](final-pay.md) | What's in final pay, separation and retirement pay, tax, notice and timing |
+| [Year-end tax](year-end-tax.md) | Annualization, BIR 2316, 1601-C, 1604-C and substituted filing |
 
 Modules:
 
@@ -18,5 +22,6 @@ Modules:
 | [Employee management](modules/employee-management.md) | Built (on `main`) |
 | [Timekeeping](modules/timekeeping.md) | Built (PR #1) |
 | [Payroll, overtime and corrections](modules/payroll.md) | Built (PR #2) |
+| [Leave, employment terms, final pay and year-end tax](modules/leave-and-separation.md) | Built (PR #2) |
 
 Write new planning docs here too: one file per topic, linked from this page.

@@ -755,3 +755,31 @@ a.nav-link:hover { background: var(--bg-hover); color: var(--ink); }
 .row-muted td { color: var(--ink-2); }
 .treatment-hint { margin-top: calc(var(--s2) * -1); }
 .sub-h { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: var(--s4) 0 var(--s1); }
+
+/* ---- Leave, employment terms, final pay, year-end ---- */
+.cell-sub { display: block; font-size: 13px; color: var(--ink-2); font-weight: 400; }
+.toggle-inline { display: flex; gap: var(--s2); align-items: center; }
+.region-table-wrap { max-height: 280px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r); }
+.region-table th { position: sticky; top: 0; background: var(--bg-subtle); }
+.region-table td, .region-table th { padding: var(--s2) var(--s3); font-size: 14px; }
+.event-leaves { list-style: none; margin: var(--s3) 0 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r); }
+.event-leave { display: flex; justify-content: space-between; align-items: center; gap: var(--s4); padding: var(--s3) var(--s4); }
+.event-leave + .event-leave { border-top: 1px solid var(--line); }
+.event-leave p { margin: 2px 0 0; }
+.terms { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s4) var(--s6); margin: var(--s3) 0 var(--s4); }
+.terms dt { font-size: 13px; color: var(--ink-2); }
+.terms dd { margin: 2px 0 0; }
+.alerts { display: grid; gap: var(--s2); margin: var(--s3) 0; }
+.fp-table td.num, .fp-table th.num { white-space: nowrap; }
+.fp-total td { font-weight: 600; border-top: 1px solid var(--line-strong); font-size: 16px; }
+.checks-list { list-style: none; padding: 0; margin: var(--s3) 0 0; display: grid; gap: var(--s2); }
+.checks-list li { display: flex; gap: var(--s2); align-items: flex-start; }
+.checks-list .ok { color: var(--ok-ink); }
+.checks-list .bad { color: var(--warn-ink); }
+.deadlines { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s3); margin: var(--s3) 0; }
+.deadline { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3) var(--s4); }
+.deadline strong { display: block; }
+.deadline .num { font-size: 15px; }
+.text-ok { color: var(--ok-ink); }
+.leave-facts { list-style: none; padding: 0; margin: var(--s1) 0 0; display: grid; gap: 2px; font-size: 14px; }
+.event-leave .btn { flex-shrink: 0; }

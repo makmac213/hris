@@ -3,6 +3,12 @@
 
 export type EmploymentStatus = "active" | "onboarding" | "on_leave" | "offboarded";
 export type EmploymentType = "full_time" | "part_time" | "contractor" | "intern";
+// Labor Code Art. 295–296 [280–281]: regular, probationary, project, seasonal, casual; fixed-term per Brent School v. Zamora.
+export type EmploymentStatusPH = "probationary" | "regular" | "project" | "seasonal" | "casual" | "fixed_term";
+export type SeparationReason =
+  | "resignation" | "end_of_contract" | "failed_probation" | "just_cause"
+  | "redundancy" | "labor_saving" | "retrenchment" | "closure" | "closure_losses" | "disease" | "retirement" | "death";
+export type PhRegion = "NCR" | "CAR" | "I" | "II" | "III" | "IV-A" | "IV-B" | "V" | "VI" | "VII" | "VIII" | "IX" | "X" | "XI" | "XII" | "XIII" | "BARMM";
 export type OnboardingPhase = "before_start" | "first_day" | "first_week" | "first_90_days";
 export type TaskOwnerRole = "people_team" | "it" | "manager" | "new_hire" | "buddy";
 export type OnboardingStatus = "in_progress" | "completed" | "cancelled";
@@ -32,6 +38,7 @@ export interface Location {
   country_code: string | null;
   timezone: string;
   is_remote: boolean;
+  ph_region: PhRegion | null; // for the regional minimum wage
 }
 
 export interface Employee {
@@ -55,6 +62,15 @@ export interface Employee {
   avatar_url: string | null;
   role: AppRole;
   shift_code_id: string | null;
+  // Philippine employment terms (null for people outside the Philippines)
+  employment_status_ph: EmploymentStatusPH | null;
+  probation_end_date: string | null; // 6 months (180 days) at most, unless an apprenticeship
+  standards_given_on: string | null; // date the probation standards were given in writing (Art. 296)
+  contract_end_date: string | null; // project, seasonal and fixed-term
+  regularized_on: string | null;
+  birth_date: string | null; // retirement pay eligibility (RA 7641)
+  separation_reason: SeparationReason | null;
+  separation_notice_date: string | null;
 }
 
 export interface ShiftCode {
@@ -150,7 +166,7 @@ export interface EmploymentEvent {
   id: string;
   employee_id: string;
   effective_date: string;
-  kind: "hired" | "promotion" | "transfer" | "title_change" | "manager_change" | "leave" | "return";
+  kind: "hired" | "promotion" | "transfer" | "title_change" | "manager_change" | "leave" | "return" | "regularized" | "separated";
   job_title: string | null;
   department_id: string | null;
   note: string | null;
@@ -204,6 +220,7 @@ export type ContributionBasis = "monthly_rate" | "actual_compensation";
 
 // Company-wide payroll policy. One row per organization.
 export interface PayrollSettings {
+  use_regional_minimum_wage: boolean; // from each person's work location; otherwise minimum_wage_daily for everyone
   workdays_per_year: 261 | 313 | 365; // divisor for the daily rate of monthly-paid staff
   minimum_wage_daily: number;
   minimum_wage_label: string; // e.g. "NCR, Wage Order NCR-28"
@@ -282,6 +299,69 @@ export interface PayItem {
   created_at: string;
 }
 
+// ---- Leave ---------------------------------------------------------------------------
+
+export type LeaveAccrual = "annual" | "monthly" | "per_event";
+
+// A kind of leave. Statutory types carry the legal minimum; the company can add days and rules on top, never less.
+export interface LeaveType {
+  id: string;
+  name: string;
+  statutory: boolean;
+  legal_basis: string | null; // e.g. "Labor Code Art. 95"
+  legal_min_days: number; // 0 for company-only leave
+  days: number; // per year (annual/monthly) or per event; ≥ legal_min_days
+  accrual: LeaveAccrual;
+  calendar_days: boolean; // maternity and special leave for women count calendar days; the rest count workdays
+  min_service_months: number; // service needed before it can be used
+  paid: boolean;
+  convertible: boolean; // unused days paid in cash at year end and on separation
+  carry_over_max: number; // days that roll into next year
+  counts_as_sil: boolean; // a company leave of ≥ 5 paid days that replaces SIL (Art. 95 exemption)
+  requires_document: string | null;
+  who: string | null; // who it's for, in plain words; HR checks it on approval
+  description: string | null;
+  active: boolean;
+}
+
+export interface LeaveRequest {
+  id: string;
+  employee_id: string;
+  leave_type_id: string;
+  start_date: string;
+  end_date: string;
+  half_day: boolean; // single-day requests only
+  reason: string;
+  status: RequestStatus;
+  filed_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+}
+
+/** Balances brought in at go-live, or adjusted by HR. */
+export interface LeaveAdjustment {
+  id: string;
+  employee_id: string;
+  leave_type_id: string;
+  year: number;
+  days: number; // + adds, − removes
+  note: string;
+}
+
+/** Year-to-date payroll figures from before the app was used (imported at go-live). */
+export interface PayrollOpening {
+  employee_id: string;
+  year: number;
+  through_date: string; // figures cover Jan 1 to this date
+  taxable_compensation: number;
+  tax_withheld: number;
+  non_taxable_benefits: number; // 13th month and other benefits already paid (toward ₱90,000)
+  mandatory_contributions: number;
+  basic_pay: number; // for the 13th month base
+  thirteenth_paid: number;
+}
+
 export interface Database {
   departments: Department[];
   locations: Location[];
@@ -302,4 +382,8 @@ export interface Database {
   employee_payroll_settings: EmployeePayrollSettings[];
   pay_items: PayItem[];
   pay_item_types: PayItemType[];
+  leave_types: LeaveType[];
+  leave_requests: LeaveRequest[];
+  leave_adjustments: LeaveAdjustment[];
+  payroll_openings: PayrollOpening[];
 }
