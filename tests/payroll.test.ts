@@ -57,7 +57,7 @@ function payItem(over: Partial<PayItem>): PayItem {
 function db(o: { employee?: Partial<Employee>; comp?: Partial<Compensation>; records?: TimeRecord[]; ot?: OvertimeRequest[]; holidays?: Holiday[]; settings?: Partial<PayrollSettings>; items?: PayItem[]; overrides?: Database["employee_payroll_settings"]; shifts?: ShiftCode[]; types?: PayItemType[]; leaveTypes?: LeaveType[]; leave?: LeaveRequest[]; openings?: PayrollOpening[]; assignments?: ShiftAssignment[] } = {}): Database {
   return {
     departments: [], locations: [], employees: [emp(o.employee)], employment_events: [], employee_documents: [], onboarding_template_tasks: [], onboarding_cases: [], onboarding_tasks: [],
-    shift_codes: o.shifts ?? [DAY, NIGHT], time_records: o.records ?? [], compensation: [comp(o.comp)], holidays: o.holidays ?? [], overtime_requests: o.ot ?? [], correction_requests: [], payroll_periods: [],
+    shift_codes: o.shifts ?? [DAY, NIGHT], time_records: o.records ?? [], compensation: [comp(o.comp)], holidays: o.holidays ?? [], overtime_requests: o.ot ?? [], correction_requests: [], payroll_periods: [], payslips: [],
     payroll_settings: { ...DEFAULT_SETTINGS, sss_basis: "monthly_rate", ...o.settings }, employee_payroll_settings: o.overrides ?? [], pay_items: o.items ?? [], pay_item_types: o.types ?? [],
     leave_types: o.leaveTypes ?? [], leave_requests: o.leave ?? [], leave_adjustments: [], payroll_openings: o.openings ?? [],
     clients: [], shift_assignments: o.assignments ?? [], schedule_settings: { horizon_days: 60, short_notice_hours: 48 }, approval_settings: { approver_roles: ["hr"] }, notifications: [],

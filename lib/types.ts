@@ -175,6 +175,18 @@ export interface PayrollPeriod {
   finalized_by: string | null;
 }
 
+/** A payslip as it was when payroll was finalized. `data` is the full calculation (lib/payroll.ts Payslip). */
+export interface IssuedPayslip {
+  id: string; // `${period_id}:${employee_id}`
+  organization_id: string;
+  period_id: string;
+  employee_id: string;
+  issued_at: string;
+  gross: number;
+  net: number;
+  data: unknown;
+}
+
 export interface EmploymentEvent {
   id: string;
   employee_id: string;
@@ -434,6 +446,7 @@ export interface Database {
   overtime_requests: OvertimeRequest[];
   correction_requests: CorrectionRequest[];
   payroll_periods: PayrollPeriod[];
+  payslips: IssuedPayslip[];
   payroll_settings: PayrollSettings;
   employee_payroll_settings: EmployeePayrollSettings[];
   pay_items: PayItem[];

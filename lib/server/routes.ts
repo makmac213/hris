@@ -75,7 +75,8 @@ export const ROUTES: Route[] = [
   { method: "GET", path: "/payroll-periods", tag: "Payroll", summary: "Payroll periods", who: "Admin, HR", run: (c) => pay.listPeriods(c) },
   { method: "GET", path: "/payroll-periods/{id}/payslips", tag: "Payroll", summary: "The payroll register for a period", who: "Admin, HR", run: (c, p) => pay.register(c, p.id) },
   { method: "POST", path: "/payroll-periods/{id}/finalize", tag: "Payroll", summary: "Lock a period after its cutoff", who: "Admin, HR (a person)", run: (c, p) => pay.finalize(c, p.id) },
-  { method: "GET", path: "/payslips", tag: "Payroll", summary: "Payslips: your own, or anyone's for admin and HR", who: "Self, admin, HR", query: pay.ListPayslips, run: (c, _p, q) => pay.payslips(c, q) },
+  { method: "GET", path: "/payslips", tag: "Payroll", summary: "Issued payslips, newest first: your own, or anyone's for admin and HR. include_estimate=true adds the open period", who: "Self, admin, HR", query: pay.ListPayslips, run: (c, _p, q) => pay.payslips(c, q) },
+  { method: "GET", path: "/payslips/{id}", tag: "Payroll", summary: "One payslip with its day-by-day time (id is period_id:employee_id)", who: "Self, admin, HR", run: (c, p) => pay.payslip(c, p.id) },
   { method: "GET", path: "/year-end/{year}", tag: "Payroll", summary: "Annualization and BIR 2316 figures", who: "Admin, HR", run: (c, p) => pay.yearEnd(c, p.year) },
 ];
 

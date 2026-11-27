@@ -98,9 +98,10 @@ These are the same rules as the web app:
 | `GET /leave-types` | Leave policies, statutory and company | Anyone |
 | `GET`, `POST /leave-requests`, `…/{id}/decision`, `…/{id}/cancel` | Leave, checked against balances and eligibility | Same as overtime |
 | `GET /payroll-periods` | Periods and their status | Admin, HR |
-| `GET /payroll-periods/{id}/payslips` | The register, computed or finalized | Admin, HR |
-| `POST /payroll-periods/{id}/finalize` | Lock the period. Refused while requests are pending or anyone is below minimum wage. | Admin, HR |
-| `GET /payslips` | Own payslips. Admin and HR can pass `employee_id`. Filter: `period_id` | Self, admin, HR |
+| `GET /payroll-periods/{id}/payslips` | The register: computed while open, the issued payslips once finalized | Admin, HR |
+| `POST /payroll-periods/{id}/finalize` | Lock the period and issue everyone's payslip. Refused while requests are pending or anyone is below minimum wage. | Admin, HR |
+| `GET /payslips` | Own issued payslips, newest first. Admin and HR can pass `employee_id`. Filters: `period_id`, `include_estimate=true` for the open period. See [payslips.md](payslips.md). | Self, admin, HR |
+| `GET /payslips/{id}` | One payslip with its day-by-day time. The id is `period_id:employee_id`. | Self, admin, HR |
 | `GET /year-end/{year}` | Annualization and 2316 figures for everyone | Admin, HR |
 | `GET`, `POST`, `PATCH`, `DELETE /departments`, `/branches`, `/clients` and `…/{id}/members` | Organization. See [scheduling.md](scheduling.md#api). | Read: anyone. Write: admin, HR |
 | `GET`, `PATCH /approval-settings` | Which roles approve, besides each person's direct supervisor. See [approvals.md](approvals.md). | Read: anyone. Write: admin, HR |

@@ -5,6 +5,7 @@
 // (and React Query / server actions) without touching the views.
 
 import { checkPunch, missingOutNotice } from "./punch";
+import { issuePayslips } from "./payslips";
 import { useSyncExternalStore } from "react";
 import { formatInstant } from "./time";
 import { formatDate } from "./format";
@@ -332,7 +333,15 @@ export function decideRequest(type: "overtime" | "correction", id: string, appro
 }
 
 export function finalizePayroll(periodId: string, byId: string) {
-  commit({ ...db, payroll_periods: db.payroll_periods.map((p) => (p.id === periodId ? { ...p, status: "finalized", finalized_at: new Date().toISOString(), finalized_by: byId } : p)) });
+  const now = new Date().toISOString();
+  const period = db.payroll_periods.find((p) => p.id === periodId);
+  if (!period || period.status !== "open") return;
+  const issued = issuePayslips(db, period, now, ORG_ID);
+  commit({
+    ...db,
+    payroll_periods: db.payroll_periods.map((p) => (p.id === periodId ? { ...p, status: "finalized", finalized_at: now, finalized_by: byId } : p)),
+    payslips: [...db.payslips.filter((x) => x.period_id !== periodId), ...issued],
+  });
 }
 
 // ---- Payroll settings and pay items ------------------------------------------------

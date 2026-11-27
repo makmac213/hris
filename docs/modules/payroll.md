@@ -45,7 +45,7 @@ Approvals (`/approvals`): admin and HR see everyone; managers see their direct r
 | My time | `/my-time` | Everyone: record time, request a fix on any recent day, file overtime, see and withdraw requests |
 | Approvals | `/approvals` | Admin, HR, managers |
 | Payroll | `/payroll` | Admin, HR: period tabs, totals, checks before finalizing, the register, each payslip, the rules with sources |
-| My pay | `/my-pay` | Everyone on Philippine payroll: payslips by period, with every line explained and a day-by-day breakdown |
+| My pay | `/my-pay` | Everyone on Philippine payroll: issued payslips by period, with every line explained, a day-by-day breakdown and print or save as PDF; the open period as an estimate ([payslips.md](../payslips.md)) |
 
 **Finalizing a period** is blocked until the period has ended, no requests in it are pending, and nobody is below the minimum wage. Once finalized, the period is locked: no requests can be filed for its dates.
 

@@ -15,7 +15,7 @@ const SQL_NAME: Partial<Record<Table, string>> = { correction_requests: "time_co
 const sqlName = (t: Table) => SQL_NAME[t] ?? t;
 
 /** Tables with an organization_id column; the rest hang off an employee (or another org-scoped row). */
-const ORG_TABLES: Table[] = ["departments", "locations", "clients", "employees", "shift_codes", "time_records", "holidays", "payroll_periods", "pay_item_types", "leave_types", "shift_assignments", "notifications"];
+const ORG_TABLES: Table[] = ["departments", "locations", "clients", "employees", "shift_codes", "time_records", "holidays", "payroll_periods", "payslips", "pay_item_types", "leave_types", "shift_assignments", "notifications"];
 const EMPLOYEE_TABLES: Table[] = [
   "employment_events", "employee_documents", "onboarding_cases", "compensation", "overtime_requests", "correction_requests",
   "employee_payroll_settings", "pay_items", "leave_requests", "leave_adjustments", "payroll_openings",
