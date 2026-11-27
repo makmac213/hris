@@ -3,7 +3,7 @@
 
 import { ORG_ID, seed } from "@/lib/mock-data";
 import type { ApprovalSettings, AuditEntry, Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
-import type { ApiKey, Repository, Row, StoredResponse, Table } from "./types";
+import type { ApiKey, Repository, Row, SettingsKey, StoredResponse, Table } from "./types";
 
 export class MemoryRepository implements Repository {
   readonly kind = "memory" as const;
@@ -64,6 +64,11 @@ export class MemoryRepository implements Repository {
   async updateApprovalSettings(_orgId: string, patch: Partial<ApprovalSettings>) {
     this.db = { ...this.db, approval_settings: { ...this.db.approval_settings, ...patch } };
     return this.db.approval_settings;
+  }
+
+  async putSettings<K extends SettingsKey>(_orgId: string, key: K, patch: Partial<Database[K]>): Promise<Database[K]> {
+    this.db = { ...this.db, [key]: { ...this.db[key], ...patch } };
+    return this.db[key];
   }
 
   async updateSettings(_orgId: string, patch: Partial<PayrollSettings>) {

@@ -444,6 +444,59 @@ export interface AppNotification {
   read_at: string | null;
 }
 
+// ---- Loans ---------------------------------------------------------------------------
+
+export type LoanKind = "sss_salary" | "sss_calamity" | "pagibig_multi_purpose" | "pagibig_calamity" | "company_loan" | "cash_advance";
+export type LoanStatus = "requested" | "active" | "paused" | "stopped" | "rejected" | "cancelled";
+
+/** A loan paid down through payroll. The balance comes from the ledger (lib/loans.ts), never stored. */
+export interface Loan {
+  id: string;
+  organization_id: string;
+  employee_id: string;
+  kind: LoanKind;
+  reference_no: string | null; // SSS or Pag-IBIG loan number, or the company voucher
+  purpose: string | null;
+  principal: number; // amount to repay (agency loans: interest included, from the billing)
+  paid_before: number; // repaid before it was entered here
+  monthly_amortization: number;
+  schedule: ContributionTiming; // split across both cutoffs, or one of them
+  first_deduction_on: string; // first period ending on or after this date
+  authorization: string | null; // company loans and advances only (Art. 113)
+  status: LoanStatus;
+  stop_reason: string | null;
+  requested_at: string | null; // set when the employee asked for it
+  requested_installments: number | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export type LoanPaymentMethod = "paid_directly" | "adjustment";
+
+/** A payment outside payroll. Payroll deductions come from the issued payslips instead. */
+export interface LoanPayment {
+  id: string;
+  loan_id: string;
+  employee_id: string;
+  paid_on: string;
+  amount: number; // adjustments can be negative
+  method: LoanPaymentMethod;
+  note: string | null;
+  recorded_by: string;
+  recorded_at: string;
+}
+
+export interface LoanSettings {
+  allow_requests: boolean;
+  cash_advance_max_share: number; // of monthly basic pay
+  company_loan_max_months: number; // months of basic pay
+  max_installments: number; // cutoffs to repay
+  one_open_at_a_time: boolean; // one company loan, advance or request at a time
+}
+
 export interface Database {
   departments: Department[];
   locations: Location[];
@@ -474,5 +527,8 @@ export interface Database {
   schedule_settings: ScheduleSettings;
   approval_settings: ApprovalSettings;
   notifications: AppNotification[];
+  loans: Loan[];
+  loan_payments: LoanPayment[];
+  loan_settings: LoanSettings;
   audit_log: AuditEntry[];
 }

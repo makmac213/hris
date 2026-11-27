@@ -8,17 +8,21 @@ import { DEFAULT_SETTINGS } from "@/lib/payroll";
 import { DEFAULT_APPROVAL_SETTINGS } from "@/lib/approvals";
 import type { ApprovalSettings, Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
 import { DEFAULT_SCHEDULE_SETTINGS } from "@/lib/schedule";
-import type { ApiKey, Repository, Row, StoredResponse, Table } from "./types";
+import type { ApiKey, Repository, Row, SettingsKey, StoredResponse, Table } from "./types";
+import { DEFAULT_LOAN_SETTINGS } from "@/lib/loans";
+
+/** Defaults for each settings object, used until an organization saves its own row. */
+const SETTINGS_DEFAULTS: { [K in SettingsKey]: Database[K] } = { loan_settings: DEFAULT_LOAN_SETTINGS };
 
 /** App table names that differ from the SQL schema. */
 const SQL_NAME: Partial<Record<Table, string>> = { correction_requests: "time_correction_requests" };
 const sqlName = (t: Table) => SQL_NAME[t] ?? t;
 
 /** Tables with an organization_id column; the rest hang off an employee (or another org-scoped row). */
-const ORG_TABLES: Table[] = ["departments", "locations", "clients", "employees", "shift_codes", "time_records", "holidays", "payroll_periods", "payslips", "pay_item_types", "audit_log", "leave_types", "shift_assignments", "notifications"];
+const ORG_TABLES: Table[] = ["loans", "departments", "locations", "clients", "employees", "shift_codes", "time_records", "holidays", "payroll_periods", "payslips", "pay_item_types", "audit_log", "leave_types", "shift_assignments", "notifications"];
 const EMPLOYEE_TABLES: Table[] = [
   "employment_events", "employee_documents", "onboarding_cases", "compensation", "overtime_requests", "correction_requests",
-  "employee_payroll_settings", "pay_items", "leave_requests", "leave_adjustments", "payroll_openings",
+  "employee_payroll_settings", "pay_items", "leave_requests", "leave_adjustments", "payroll_openings", "loan_payments",
 ];
 const OTHER_TABLES: Table[] = ["onboarding_template_tasks", "onboarding_tasks"];
 
@@ -68,6 +72,11 @@ export class SupabaseRepository implements Repository {
     db.schedule_settings = { ...DEFAULT_SCHEDULE_SETTINGS, ...(sched ?? {}) } as ScheduleSettings;
     const { data: appr } = await this.sb.from("approval_settings").select("approver_roles").eq("organization_id", orgId).maybeSingle();
     db.approval_settings = { ...DEFAULT_APPROVAL_SETTINGS, ...(appr ?? {}) } as ApprovalSettings;
+    for (const key of Object.keys(SETTINGS_DEFAULTS) as SettingsKey[]) {
+      const { data: row } = await this.sb.from(key).select("*").eq("organization_id", orgId).maybeSingle();
+      const { organization_id: _o, ...rest } = (row ?? {}) as Record<string, unknown>;
+      (db as unknown as Record<string, unknown>)[key] = { ...SETTINGS_DEFAULTS[key], ...rest };
+    }
     return db;
   }
 
@@ -111,6 +120,13 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.sb.from("approval_settings").upsert({ organization_id: orgId, ...patch } as never).select("approver_roles").single();
     if (error) throw new Error(`approval_settings: ${error.message}`);
     return { ...DEFAULT_APPROVAL_SETTINGS, ...(data as Partial<ApprovalSettings>) };
+  }
+
+  async putSettings<K extends SettingsKey>(orgId: string, key: K, patch: Partial<Database[K]>): Promise<Database[K]> {
+    const { data, error } = await this.sb.from(key).upsert({ organization_id: orgId, ...patch } as never).select("*").single();
+    if (error) throw new Error(`${key}: ${error.message}`);
+    const { organization_id: _o, ...rest } = data as Record<string, unknown>;
+    return { ...SETTINGS_DEFAULTS[key], ...rest } as Database[K];
   }
 
   async updateSettings(orgId: string, patch: Partial<PayrollSettings>) {

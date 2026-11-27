@@ -9,6 +9,8 @@ import { formatDate } from "@/lib/format";
 import type { DeductionCategory, EarningCategory, Employee, PayItem, PayItemSchedule, PayItemType } from "@/lib/types";
 import { Button, Dialog, EmptyState, Field, Blank } from "@/components/ui";
 import { Choice, Toggle } from "@/features/payroll/SettingsDialog";
+import { LoanDialog, LoanStatus } from "@/features/loans/LoansView";
+import { loanSummary } from "@/lib/loans";
 
 
 export function PayTab({ employee }: { employee: Employee }) {
@@ -91,10 +93,43 @@ export function PayTab({ employee }: { employee: Employee }) {
         </div>
       </section>
 
+      <ProfileLoans employee={employee} />
+
       {editComp && <CompensationDialog employee={employee} onClose={() => setEditComp(false)} />}
       {editContrib && <ContributionDialog employee={employee} onClose={() => setEditContrib(false)} />}
       {adding && <PayItemDialog employee={employee} presetType={adding.type} onClose={() => setAdding(null)} />}
     </div>
+  );
+}
+
+function ProfileLoans({ employee }: { employee: Employee }) {
+  const db = useDb();
+  const [open, setOpen] = useState<string | null>(null);
+  const list = db.loans.filter((l) => l.employee_id === employee.id).map((l) => loanSummary(db, l, today()))
+    .filter((s) => ["requested", "active", "paused"].includes(s.status) || s.loan.created_at.slice(0, 10) >= `${Number(today().slice(0, 4)) - 1}${today().slice(4)}`);
+  const sel = list.find((s) => s.loan.id === open);
+  return (
+    <section className="panel">
+      <div className="panel-head"><h2>Loans and advances</h2><Link className="small-link" href="/loans">All loans</Link></div>
+      {list.length === 0 ? <p className="muted">None in the last year. Add SSS, Pag-IBIG and company loans on the <Link className="link" href="/loans">Loans</Link> page.</p> : (
+        <div className="pay-items">
+          {list.map((s) => (
+            <div key={s.loan.id} className="pay-item">
+              <span className="cell-2">
+                <span>{s.info.label}{s.loan.purpose && !s.info.agency ? `: ${s.loan.purpose}` : ""}</span>
+                <span className="muted">{s.status === "requested" ? "Waiting for HR" : `${peso(s.balance)} left of ${peso(s.loan.principal)}${s.loan.reference_no ? ` · ${s.loan.reference_no}` : ""}`}</span>
+                {s.warning && <span className="text-warn">{s.warning}</span>}
+              </span>
+              <span className="pay-item-side">
+                {s.status === "active" && s.balance > 0 ? <span className="num pay-item-amt neg">−{peso(s.perCutoff)}</span> : <LoanStatus status={s.status} />}
+                {s.status !== "requested" && <Button size="sm" variant="ghost" onClick={() => setOpen(s.loan.id)}>Open</Button>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {sel && <LoanDialog summary={sel} employee={employee} onClose={() => setOpen(null)} />}
+    </section>
   );
 }
 
@@ -189,7 +224,8 @@ function ContributionDialog({ employee, onClose }: { employee: Employee; onClose
 function PayItemDialog({ employee, presetType, onClose }: { employee: Employee; presetType?: PayItemType; onClose: () => void }) {
   const db = useDb();
   const { employee: me } = useCurrentUser();
-  const types = db.pay_item_types.filter((x) => x.active);
+  // Loans and advances have their own ledger on the Loans page (docs/loans.md).
+  const types = db.pay_item_types.filter((x) => x.active && !(x.direction === "deduction" && ["sss_loan", "pagibig_loan", "company_loan"].includes(x.category)));
   const [typeId, setTypeId] = useState(presetType?.id ?? types.find((x) => x.direction === "earning")?.id ?? "");
   const type = types.find((x) => x.id === typeId);
   const [label, setLabel] = useState(presetType?.name ?? type?.name ?? "");

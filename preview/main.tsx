@@ -21,6 +21,7 @@ import { LeavePoliciesView } from "@/features/leave/LeavePoliciesView";
 import { OrganizationView } from "@/features/org/OrganizationView";
 import { ScheduleView } from "@/features/schedule/ScheduleView";
 import { ReportsView } from "@/features/reports/ReportsView";
+import { LoansView } from "@/features/loans/LoansView";
 import { usePathname } from "./shims/navigation";
 
 function Routes() {
@@ -45,6 +46,7 @@ function Routes() {
   else if (parts[0] === "payroll") view = <PayrollView />;
   else if (parts[0] === "my-pay") view = <MyPayView />;
   else if (parts[0] === "reports") view = <ReportsView />;
+  else if (parts[0] === "loans") view = <LoansView />;
   else view = <DirectoryView />;
   return <AppShell>{view}</AppShell>;
 }

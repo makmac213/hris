@@ -104,6 +104,9 @@ These are the same rules as the web app:
 | `GET /payslips` | Own issued payslips, newest first. Admin and HR can pass `employee_id`. Filters: `period_id`, `include_estimate=true` for the open period. See [payslips.md](payslips.md). | Self, admin, HR |
 | `GET /payslips/{id}` | One payslip with its day-by-day time. The id is `period_id:employee_id`. | Self, admin, HR |
 | `GET /year-end/{year}` | Annualization and 2316 figures for everyone | Admin, HR |
+| `GET`, `POST /loans`, `GET`, `PATCH /loans/{id}`, `POST /loans/{id}/payments` | Loans and advances with balance and ledger; entering, pausing, stopping, payments outside payroll. See [loans.md](loans.md#api). | Read: self, admin, HR. Write: admin, HR |
+| `POST /loan-requests`, `POST /loans/{id}/decision`, `…/{id}/cancel` | Ask for a cash advance or company loan; admin or HR decides; withdraw while waiting | The person; admin and HR decide, never their own |
+| `GET`, `PATCH /loan-settings` | Company policy for requests | Read: anyone. Write: admin, HR |
 | `GET`, `POST`, `PATCH`, `DELETE /departments`, `/branches`, `/clients` and `…/{id}/members` | Organization. See [scheduling.md](scheduling.md#api). | Read: anyone. Write: admin, HR |
 | `GET`, `PATCH /approval-settings` | Which roles approve, besides each person's direct supervisor. See [approvals.md](approvals.md). | Read: anyone. Write: admin, HR |
 | `GET /approvers?employee_id=` | Who can decide a person's requests | The person, their supervisor, approvers, admin, HR |

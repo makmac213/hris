@@ -9,6 +9,7 @@ import * as pay from "./services/payroll";
 import * as org from "./services/org";
 import * as sched from "./services/schedule";
 import * as rep from "./services/reports";
+import * as loans from "./services/loans";
 
 type Params = Record<string, string>;
 export interface Route {
@@ -80,6 +81,16 @@ export const ROUTES: Route[] = [
   { method: "POST", path: "/payroll-periods/{id}/finalize", tag: "Payroll", summary: "Lock a period after its cutoff", who: "Admin, HR (a person)", run: (c, p) => pay.finalize(c, p.id) },
   { method: "GET", path: "/payslips", tag: "Payroll", summary: "Issued payslips, newest first: your own, or anyone's for admin and HR. include_estimate=true adds the open period", who: "Self, admin, HR", query: pay.ListPayslips, run: (c, _p, q) => pay.payslips(c, q) },
   { method: "GET", path: "/payslips/{id}", tag: "Payroll", summary: "One payslip with its day-by-day time (id is period_id:employee_id)", who: "Self, admin, HR", run: (c, p) => pay.payslip(c, p.id) },
+  { method: "GET", path: "/loans", tag: "Loans", summary: "Loans and advances with balances. Filters: employee_id, status, kind", who: "Own loans; admin and HR see everyone", query: loans.ListLoans, run: (c, _p, q) => loans.listLoans(c, q) },
+  { method: "POST", path: "/loans", tag: "Loans", summary: "Enter a loan: SSS or Pag-IBIG from the agency billing, a company loan or a cash advance", who: "Admin, HR", body: loans.CreateLoan, created: true, run: (c, _p, _q, b) => loans.createLoan(c, b) },
+  { method: "GET", path: "/loans/{id}", tag: "Loans", summary: "One loan with its balance and ledger", who: "The person, admin, HR", run: (c, p) => loans.getLoan(c, p.id) },
+  { method: "PATCH", path: "/loans/{id}", tag: "Loans", summary: "Change the amortization, schedule or reference; pause, resume or stop", who: "Admin, HR", body: loans.UpdateLoan, run: (c, p, _q, b) => loans.updateLoan(c, p.id, b) },
+  { method: "POST", path: "/loans/{id}/payments", tag: "Loans", summary: "Record a payment made outside payroll, or an adjustment", who: "Admin, HR", body: loans.LoanPaymentBody, created: true, run: (c, p, _q, b) => loans.addPayment(c, p.id, b) },
+  { method: "POST", path: "/loans/{id}/decision", tag: "Loans", summary: "Approve or reject a request for a cash advance or company loan", who: "Admin, HR (a person); never their own", body: loans.LoanDecision, run: (c, p, _q, b) => loans.decide(c, p.id, b) },
+  { method: "POST", path: "/loans/{id}/cancel", tag: "Loans", summary: "Withdraw a request still waiting", who: "The person who asked", run: (c, p) => loans.cancel(c, p.id) },
+  { method: "POST", path: "/loan-requests", tag: "Loans", summary: "Ask for a cash advance or company loan, within company policy", who: "The person", body: loans.LoanRequestBody, created: true, run: (c, _p, _q, b) => loans.requestLoan(c, b) },
+  { method: "GET", path: "/loan-settings", tag: "Loans", summary: "Company policy for loan and advance requests", who: "Anyone", run: (c) => loans.getSettings(c) },
+  { method: "PATCH", path: "/loan-settings", tag: "Loans", summary: "Change the policy for loan and advance requests", who: "Admin, HR", body: loans.LoanSettingsBody, run: (c, _p, _q, b) => loans.putSettings(c, b) },
   { method: "GET", path: "/year-end/{year}", tag: "Payroll", summary: "Annualization and BIR 2316 figures", who: "Admin, HR", run: (c, p) => pay.yearEnd(c, p.year) },
 ];
 
