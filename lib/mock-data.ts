@@ -12,6 +12,7 @@ import type {
   OnboardingTemplateTask,
   AppRole,
   ShiftCode,
+  SeparationReason,
   TimeRecord,
   Compensation,
   CorrectionRequest,
@@ -37,6 +38,7 @@ import { STATUTORY_LEAVES } from "./leave";
 import { isWeekend, localToIso, phDefaultCodes, spanMinutes, zoned } from "./time";
 import { DEFAULT_APPROVAL_SETTINGS } from "./approvals";
 import { issuePayslips } from "./payslips";
+import { seedAuditLog } from "./audit";
 import { assignmentId, DEFAULT_SCHEDULE_SETTINGS, leaveNotifications } from "./schedule";
 
 // Sample company for the prototype. All people are fictional.
@@ -124,7 +126,20 @@ const rows: Row[] = [
   ["e46", "Cherry Mae", "Uy", "Banking Support Representative", "dep-ops", "loc-ceb", "e45", "2024-01-22"],
   ["e47", "Liza", "Manalo", "Patient Support Representative", "dep-ops", "loc-mnl", "e41", "2025-02-03"],
   ["e48", "Noel", "Pascual", "Technical Support Representative", "dep-ops", "loc-ceb", "e45", "2025-04-14"],
+  // Former Client Operations and engineering staff, for turnover reporting
+  ["e49", "Mark Anthony", "Bautista", "Customer Service Representative", "dep-ops", "loc-mnl", "e41", "2024-06-03", "offboarded"],
+  ["e50", "Grace", "Navarro", "Patient Support Representative", "dep-ops", "loc-ceb", "e45", "2025-08-18", "offboarded"],
+  ["e51", "Jomar", "Castillo", "Technical Support Representative", "dep-ops", "loc-ceb", "e45", "2025-01-13", "offboarded"],
+  ["e52", "Bea", "Robles", "QA Engineer", "dep-eng", "loc-mnl", "e06", "2023-02-06", "offboarded"],
 ];
+
+/** When and why former employees left. Everyone else offboarded left on Sep 30 after resigning. */
+const EXITS: Record<string, { end: string; reason: SeparationReason; notice: string | null }> = {
+  e49: { end: "2026-03-31", reason: "resignation", notice: "2026-03-01" },
+  e50: { end: "2026-02-13", reason: "failed_probation", notice: null },
+  e51: { end: "2026-07-15", reason: "resignation", notice: "2026-06-15" },
+  e52: { end: "2026-11-14", reason: "redundancy", notice: "2026-10-14" },
+};
 
 // Client accounts (fictional). People not on an account have no client.
 const clients: Client[] = [
@@ -139,7 +154,7 @@ const CLIENT_OF: Record<string, string> = {
   e29: "cl-northwind", // Customer Success manager for the account
 };
 
-const ROLES: Record<string, AppRole> = { e04: "admin", e10: "hr", e22: "hr", e39: "operations", e40: "operations" };
+const ROLES: Record<string, AppRole> = { e01: "executive", e04: "admin", e10: "hr", e22: "hr", e39: "operations", e40: "operations" };
 
 // ---- Shift codes -------------------------------------------------------------
 // The nine Philippine defaults, plus two codes an admin uploaded for the Singapore and Sydney offices.
@@ -168,7 +183,10 @@ const slug = (s: string) =>
 
 // Philippine employment terms. Everyone in a Philippine office is regular after a six-month probation,
 // except the scripted cases below so each rule shows up somewhere.
+const separationNote: Partial<Record<SeparationReason, string>> = { resignation: "Resigned", failed_probation: "Didn't meet the standards for regularization", redundancy: "Position made redundant" };
+
 const PH_TERMS: Record<string, Partial<Employee>> = {
+  e50: { employment_status_ph: "probationary", regularized_on: null }, // let go before regularization
   e02: { birth_date: "1964-03-10" }, // 62: eligible for retirement pay (RA 7641)
   e04: { birth_date: "1979-08-22" },
   e25: { employment_status_ph: "fixed_term", contract_end_date: "2026-12-15", regularized_on: null, probation_end_date: null }, // part-time, one-year contract
@@ -197,7 +215,7 @@ const employees: Employee[] = rows.map(([id, first, last, title, dep, loc, manag
   employment_type: type,
   status,
   start_date: start,
-  end_date: status === "offboarded" ? "2026-09-30" : null,
+  end_date: status === "offboarded" ? EXITS[id]?.end ?? "2026-09-30" : null,
   avatar_url: null,
   role: (ROLES[id] ?? "employee") as AppRole,
   shift_code_id: SHIFT_ASSIGNMENTS[id] ?? null,
@@ -207,8 +225,8 @@ const employees: Employee[] = rows.map(([id, first, last, title, dep, loc, manag
   contract_end_date: null,
   regularized_on: isPhLocation(loc) ? addDays(probationEndFor(start), 1) : null,
   birth_date: null,
-  separation_reason: status === "offboarded" ? "resignation" : null,
-  separation_notice_date: status === "offboarded" ? "2026-08-31" : null,
+  separation_reason: status === "offboarded" ? EXITS[id]?.reason ?? "resignation" : null,
+  separation_notice_date: status === "offboarded" ? (EXITS[id] ? EXITS[id].notice : "2026-08-31") : null,
   ...(PH_TERMS[id] ?? {}),
 }));
 
@@ -224,6 +242,9 @@ for (const e of employees) {
       job_title: e.job_title, department_id: e.department_id, note: "Annual review cycle",
     });
   }
+}
+for (const e of employees.filter((x) => x.end_date && EXITS[x.id])) {
+  employment_events.push({ id: `ev-${e.id}-exit`, employee_id: e.id, effective_date: e.end_date!, kind: "separated", job_title: null, department_id: null, note: separationNote[e.separation_reason!] ?? null });
 }
 employment_events.push(
   { id: "ev-e17-leave", employee_id: "e17", effective_date: "2026-10-12", kind: "leave", job_title: null, department_id: null, note: "Parental leave, returning 2027-01-11" },
@@ -626,6 +647,7 @@ export const seed: Database = {
   schedule_settings,
   approval_settings: { ...DEFAULT_APPROVAL_SETTINGS },
   notifications: [] as AppNotification[],
+  audit_log: [],
 };
 
 // Notifications that would have gone out: Paul's sick leave approved this morning, Liza's emergency leave filed today.
@@ -645,3 +667,6 @@ export const seed: Database = {
   const prev = payroll_periods.find((p) => p.status !== "open")!;
   seed.payslips = issuePayslips(seed, prev, SEED_NOW, ORG_ID).map((x) => ({ ...x, issued_at: prev.finalized_at! }));
 }
+
+// What the log would show for the history above.
+seed.audit_log = seedAuditLog(seed, ORG_ID);

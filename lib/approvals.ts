@@ -32,7 +32,7 @@ export function approversFor(db: Database, employeeId: string): { supervisor: Em
   return { supervisor, roles, people };
 }
 
-const ROLE_PLURAL: Record<AppRole, string> = { admin: "admin", hr: "HR", operations: "operations", employee: "employees" };
+const ROLE_PLURAL: Record<AppRole, string> = { admin: "admin", hr: "HR", operations: "operations", executive: "executives", employee: "employees" };
 
 /** "your supervisor, Ana Reyes, or HR and admin" style text for the person filing. */
 export function approverText(db: Database, employeeId: string, name: (e: Employee) => string): string {

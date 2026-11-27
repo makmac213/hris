@@ -13,7 +13,7 @@ export type OnboardingPhase = "before_start" | "first_day" | "first_week" | "fir
 export type TaskOwnerRole = "people_team" | "it" | "manager" | "new_hire" | "buddy";
 export type OnboardingStatus = "in_progress" | "completed" | "cancelled";
 // operations: schedules shifts for everyone (workforce management in a BPO); no pay or HR records.
-export type AppRole = "admin" | "hr" | "operations" | "employee";
+export type AppRole = "admin" | "hr" | "operations" | "executive" | "employee";
 export type ShiftKind = "whole_day" | "half_day";
 export type ShiftSource = "system_default" | "uploaded" | "manual";
 export type TimeRecordKind = "clock_in" | "clock_out";
@@ -185,6 +185,20 @@ export interface IssuedPayslip {
   gross: number;
   net: number;
   data: unknown;
+}
+
+/** One change to one record: who, when, and each field's old and new value (lib/audit.ts). */
+export interface AuditEntry {
+  id: string;
+  organization_id: string;
+  at: string;
+  actor_id: string | null; // the person, or null for an API key or the system
+  actor_label: string; // "Marisol Dela Cruz", "API key hk_live_ab12", "System"
+  action: "create" | "update" | "delete";
+  entity: string; // table name
+  entity_id: string;
+  summary: string;
+  changes: { field: string; from: string | null; to: string | null }[];
 }
 
 export interface EmploymentEvent {
@@ -460,4 +474,5 @@ export interface Database {
   schedule_settings: ScheduleSettings;
   approval_settings: ApprovalSettings;
   notifications: AppNotification[];
+  audit_log: AuditEntry[];
 }

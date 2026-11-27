@@ -37,8 +37,9 @@ The payroll engine in `lib/payroll.ts` is pure: `computePayslip(db, employee, pe
 
 | Role | Sees |
 | --- | --- |
-| Admin, HR | Everything: people, attendance, approvals, payroll, shift codes, plus their own time and pay |
-| Manager (anyone with reports) | Their own time and pay, and approvals for their direct reports |
+| Admin, HR | Everything: people, attendance, approvals, payroll, shift codes, reports, plus their own time and pay. Only admin sees the audit trail. |
+| Executive | Their own time and pay, and the executive dashboard, headcount and turnover reports ([reports.md](reports.md)) |
+| Manager (anyone with reports) | Their own time and pay, approvals for their direct reports, and attendance, tardiness and leave reports for their team |
 | Approver roles | HR by default, operations if turned on: approvals for everyone ([approvals.md](approvals.md)) |
 | Employee | My time, My pay, the directory and the org chart |
 

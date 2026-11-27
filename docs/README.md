@@ -19,6 +19,7 @@ All planning and documentation for the project lives here. Start with the roadma
 | [Payslips](payslips.md) | What employees see under My pay, printing, and why issued payslips never change |
 | [Who approves requests](approvals.md) | Direct supervisor plus approver roles, for leave, overtime and corrections |
 | [Organization and scheduling](scheduling.md) | Departments, branches, clients; the operations schedule, leave gaps, cover and notifications |
+| [Reports and audit trail](reports.md) | HR, executive, payroll and audit reports; who sees which; filters, CSV and PDF export, the API, and the audit log |
 
 Modules:
 
@@ -30,5 +31,6 @@ Modules:
 | [Leave, employment terms, final pay and year-end tax](modules/leave-and-separation.md) | Built (PR #2) |
 | [REST API](api.md) | Built (PR #3) |
 | [Organization and scheduling](scheduling.md) | Built (`feature/scheduling`) |
+| [Reports and audit trail](reports.md) | Built (`feature/reports`) |
 
 Write new planning docs here too: one file per topic, linked from this page.

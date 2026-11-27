@@ -2,7 +2,7 @@
 // One instance per server process; a restart resets it, like the prototype.
 
 import { ORG_ID, seed } from "@/lib/mock-data";
-import type { ApprovalSettings, Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
+import type { ApprovalSettings, AuditEntry, Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
 import type { ApiKey, Repository, Row, StoredResponse, Table } from "./types";
 
 export class MemoryRepository implements Repository {
@@ -55,6 +55,10 @@ export class MemoryRepository implements Repository {
   async updateScheduleSettings(_orgId: string, patch: Partial<ScheduleSettings>) {
     this.db = { ...this.db, schedule_settings: { ...this.db.schedule_settings, ...patch } };
     return this.db.schedule_settings;
+  }
+
+  async appendAudit(_orgId: string, entries: AuditEntry[]) {
+    if (entries.length) this.db = { ...this.db, audit_log: [...entries, ...this.db.audit_log] };
   }
 
   async updateApprovalSettings(_orgId: string, patch: Partial<ApprovalSettings>) {

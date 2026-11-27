@@ -1,7 +1,7 @@
 // Storage boundary. Services only talk to a Repository, so the same rules run on the in-memory store
 // (development, tests) and on Supabase (production).
 
-import type { ApprovalSettings, Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
+import type { ApprovalSettings, AuditEntry, Database, PayrollSettings, ScheduleSettings } from "@/lib/types";
 
 /** Tables that hold rows. `payroll_settings`, `schedule_settings` and `approval_settings` are one object per organization, with their own methods. */
 export type Table = { [K in keyof Database]: Database[K] extends unknown[] ? K : never }[keyof Database];
@@ -9,7 +9,7 @@ export type Row<T extends Table> = Database[T][number];
 
 export type ApiScope =
   | "employees:read" | "employees:write" | "time:write" | "requests:read" | "requests:write"
-  | "payroll:read" | "payroll:write" | "leave:read" | "schedule:read" | "schedule:write";
+  | "payroll:read" | "payroll:write" | "leave:read" | "schedule:read" | "schedule:write" | "reports:read";
 
 export interface ApiKey {
   id: string;
@@ -40,6 +40,8 @@ export interface Repository {
   updateSettings(orgId: string, patch: Partial<PayrollSettings>): Promise<void>;
   updateScheduleSettings(orgId: string, patch: Partial<ScheduleSettings>): Promise<ScheduleSettings>;
   updateApprovalSettings(orgId: string, patch: Partial<ApprovalSettings>): Promise<ApprovalSettings>;
+  /** Add change-log entries. Postgres writes its own from a trigger (migration 0010), so there this does nothing. */
+  appendAudit(orgId: string, entries: AuditEntry[]): Promise<void>;
   newId(prefix: string): string;
 
   findEmployeeByUser(userId: string): Promise<{ employeeId: string; orgId: string } | null>;
