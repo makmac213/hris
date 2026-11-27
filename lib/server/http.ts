@@ -48,7 +48,8 @@ export async function handle(req: Request, now: () => string = () => new Date().
 
     const query = Object.fromEntries(url.searchParams);
     const result = await m.route.run(ctx, m.params, query, body);
-    const status = m.route.created ? 201 : 200;
+    // A repeat of something already saved (e.g. the same punch from a second device) answers 200 with the original.
+    const status = m.route.created && !(result as { duplicate?: boolean } | null)?.duplicate ? 201 : 200;
     if (idemKey) await auth.repo.putIdempotent(scope, idemKey, { status, body: result, created_at: at });
     return json(status, result, requestId);
   } catch (e) {

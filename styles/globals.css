@@ -639,6 +639,8 @@ a.nav-link:hover { background: var(--bg-hover); color: var(--ink); }
 .row-menu .icon-btn { width: 32px; height: 32px; }
 .row-menu-list { left: auto; right: 0; width: 240px; top: calc(100% + 2px); }
 .menu-spacer { display: inline-block; width: 32px; vertical-align: middle; }
+.callout-warn.unclosed { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); flex-wrap: wrap; margin-bottom: var(--s4); }
+.today-sessions { display: flex; flex-direction: column; gap: 2px; }
 .callout-warn { padding: var(--s3) var(--s4); border-radius: var(--r); background: var(--warn-bg); color: var(--warn-ink); }
 .table-wrap:has(.row-menu-list) { overflow: visible; }
 .record-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 260px)); }

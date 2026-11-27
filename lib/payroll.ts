@@ -8,6 +8,7 @@ import { convertibleDays, leaveByDate, SIL_ID } from "./leave";
 import { annualTax, isLastPeriodOfYear, yearToDate } from "./yearend";
 import { wageFor } from "./regions";
 import { isScheduledWorkday, scheduleFor } from "./schedule";
+import { intervals, overlapMs, sessionsOf } from "./sessions";
 
 export const RULES = {
   minimumWage: { region: "NCR", daily: 755, effective: "2026-09-26", source: "Wage Order No. NCR-28" },
@@ -241,14 +242,10 @@ export function dayMultiplier(t: DayType): number {
   return { ordinary: 1, rest: RULES.restDay, special: RULES.specialDay, special_rest: RULES.specialOnRestDay, regular: RULES.regularHoliday, regular_rest: RULES.regularOnRestDay }[t];
 }
 
+/** The day's first time in and last time out, after approved corrections (lib/punch.ts). */
 export function effectiveInOut(records: TimeRecord[]) {
-  const pick = (kind: TimeRecord["kind"], last: boolean) => {
-    const corr = records.filter((r) => r.kind === kind && r.source === "correction").sort((a, b) => b.recorded_at.localeCompare(a.recorded_at))[0];
-    if (corr) return corr;
-    const dev = records.filter((r) => r.kind === kind && r.source === "device").sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
-    return last ? dev[dev.length - 1] : dev[0];
-  };
-  return { clockIn: pick("clock_in", false), clockOut: pick("clock_out", true) };
+  const d = sessionsOf(records);
+  return { clockIn: d.first, clockOut: d.open ? undefined : d.last };
 }
 
 export interface DayContext {
@@ -273,9 +270,11 @@ export function computeDay(
   const rest = ctx.rest ?? isWeekend(date);
   const holiday = ctx.holidayOn(date);
   const type = dayTypeOf(holiday, rest);
-  const { clockIn, clockOut } = effectiveInOut(records);
-  const inMs = clockIn ? Date.parse(clockIn.recorded_at) : null;
-  const outMs = clockOut ? Date.parse(clockOut.recorded_at) : null;
+  // Several in-out sessions a day are allowed (breaks, split shifts, a mistaken time out). See lib/punch.ts.
+  const day = sessionsOf(records);
+  const spans = intervals(day);
+  const inMs = day.first ? Date.parse(day.first.recorded_at) : null;
+  const complete = spans.length > 0 && !day.open;
   const premium = !ctx.managerial;
 
   const base: DayCalc = {
@@ -293,15 +292,24 @@ export function computeDay(
     base.future = ctx.nowMs < schedEnd; // today's shift still running, or a later day: projected in a draft
   }
 
-  // Scheduled time: only time inside the schedule counts, net of the unpaid break.
+  // Scheduled time: only time inside the schedule counts, net of the unpaid break. Time away between sessions
+  // inside the schedule counts toward the break first; only the rest of the break is deducted.
   // Each piece takes the holiday status of the calendar date it fell on (a 10 PM shift into a holiday).
-  if (shift && !rest && inMs && outMs) {
-    const a = Math.max(inMs, schedStart), b = Math.min(outMs, schedEnd);
-    const inside = Math.max(0, b - a) / 60000;
-    const brk = inside > 300 ? shift.break_minutes : 0;
-    base.workedMin = Math.round(Math.min(base.scheduledMin, Math.max(0, inside - brk)));
-    const scale = inside > 0 ? base.workedMin / inside : 0;
-    if (b > a) {
+  const worked = (list: readonly (readonly [number, number])[]) => {
+    const insideMs = list.reduce((n, [x, y]) => n + overlapMs(x, y, schedStart, schedEnd), 0);
+    let awayMs = 0;
+    for (let i = 1; i < list.length; i++) awayMs += overlapMs(list[i - 1][1], list[i][0], schedStart, schedEnd);
+    const inside = insideMs / 60000;
+    const brk = inside > 300 ? Math.max(0, shift!.break_minutes - awayMs / 60000) : 0;
+    return { inside, min: Math.round(Math.min(base.scheduledMin, Math.max(0, inside - brk))) };
+  };
+  if (shift && !rest && inMs !== null && (complete || !base.future)) {
+    const w = worked(spans);
+    base.workedMin = w.min;
+    const scale = w.inside > 0 ? base.workedMin / w.inside : 0;
+    for (const [x, y] of spans) {
+      const a = Math.max(x, schedStart), b = Math.min(y, schedEnd);
+      if (b <= a) continue;
       for (const piece of splitByDate(a, b, tz)) {
         const t = dayTypeOf(ctx.holidayOn(piece.date), false);
         const min = ((piece.to - piece.from) / 60000) * scale;
@@ -311,21 +319,17 @@ export function computeDay(
     }
     const late = Math.round((inMs - schedStart) / 60000);
     base.lateMin = late > shift.grace_minutes ? late : 0;
-    // Leaving early counts the scheduled minutes not worked, so leaving at noon isn't also charged for the lunch break.
-    const clockUndertime = Math.max(0, Math.round((schedEnd - outMs) / 60000));
-    base.undertimeMin = Math.min(clockUndertime, Math.max(0, base.scheduledMin - base.workedMin - Math.max(0, late)));
-  } else if (shift && !rest && !base.future && inMs && !outMs) {
-    const late = Math.round((inMs - schedStart) / 60000);
-    base.lateMin = late > shift.grace_minutes ? late : 0;
-    base.undertimeMin = Math.max(0, base.scheduledMin - base.lateMin);
-    base.incomplete = true;
-  } else if (shift && !rest && !base.future && !inMs) {
+    // Scheduled minutes not worked and not already counted as late. Leaving at noon isn't also charged for the lunch break.
+    base.undertimeMin = Math.max(0, Math.round(base.scheduledMin - base.workedMin - Math.max(0, late)));
+    // Timed in and never timed out: only finished sessions count, and the day is unpaid past them until a correction.
+    if (!complete) base.incomplete = true;
+  } else if (shift && !rest && !base.future && inMs === null) {
     if (type === "regular") base.holidayPaidUnworked = ctx.prevWorkdayPresent; // Art. 94; successive-holiday rule handled by the caller
     else if (type === "special") base.specialUnworked = true;
     else if (!lv || !lv.paid || lv.half) base.absent = true; // paid leave isn't an absence; unpaid leave is, and so is the other half of a half day
   }
   // A paid half-day leave covers half the schedule: take it off undertime first, then late.
-  if (lv?.paid && lv.half && (inMs || base.absent)) {
+  if (lv?.paid && lv.half && (inMs !== null || base.absent)) {
     let cover = base.scheduledMin / 2;
     if (base.absent) { base.absent = false; base.undertimeMin = base.scheduledMin - cover; cover = 0; }
     const u = Math.min(cover, base.undertimeMin); base.undertimeMin -= u; cover -= u;
@@ -333,15 +337,17 @@ export function computeDay(
   }
 
   // Overtime: only approved requests, and only the minutes the time records show were worked (Art. 87).
-  if (inMs && outMs && premium) {
+  if (spans.length && premium) {
     const pieces: { from: number; to: number }[] = [];
     for (const r of approvedOt) {
-      const a = Math.max(inMs, Date.parse(r.start_at)), b = Math.min(outMs, Date.parse(r.end_at));
-      if (b <= a) continue;
-      if (shift && !rest) {
-        if (a < schedStart) pieces.push({ from: a, to: Math.min(b, schedStart) });
-        if (b > schedEnd) pieces.push({ from: Math.max(a, schedEnd), to: b });
-      } else pieces.push({ from: a, to: b });
+      for (const [x, y] of spans) {
+        const a = Math.max(x, Date.parse(r.start_at)), b = Math.min(y, Date.parse(r.end_at));
+        if (b <= a) continue;
+        if (shift && !rest) {
+          if (a < schedStart) pieces.push({ from: a, to: Math.min(b, schedStart) });
+          if (b > schedEnd) pieces.push({ from: Math.max(a, schedEnd), to: b });
+        } else pieces.push({ from: a, to: b });
+      }
     }
     pieces.sort((x, y) => x.from - y.from);
     // On a rest day or holiday without a schedule, the first 8 hours carry the day premium; minutes past 8 get +30% on top.
@@ -367,10 +373,11 @@ export function computeDay(
   }
   base.nsdMin = Math.round(base.segments.reduce((n, s) => n + s.nightMin, 0));
 
-  if (inMs && outMs) {
-    const outside = Math.round(((outMs - inMs) - (shift && !rest ? overlap(inMs, outMs, schedStart, schedEnd) : 0)) / 60000);
-    for (const r of pendingOt) base.pendingOtMin += Math.round(overlap(inMs, outMs, Date.parse(r.start_at), Date.parse(r.end_at)) / 60000);
-    const early = shift && !rest && inMs < schedStart ? Math.round((schedStart - inMs) / 60000) : 0;
+  if (spans.length) {
+    const sched = shift && !rest;
+    const outside = Math.round(spans.reduce((n, [x, y]) => n + (y - x) - (sched ? overlapMs(x, y, schedStart, schedEnd) : 0), 0) / 60000);
+    for (const r of pendingOt) base.pendingOtMin += Math.round(spans.reduce((n, [x, y]) => n + overlapMs(x, y, Date.parse(r.start_at), Date.parse(r.end_at)), 0) / 60000);
+    const early = sched ? Math.round(spans.reduce((n, [x, y]) => n + overlapMs(x, y, -Infinity, schedStart), 0) / 60000) : 0;
     const extra = Math.max(0, outside - base.otMin - base.pendingOtMin - early);
     base.unapprovedExtraMin = extra >= 30 && premium ? extra : 0; // a few minutes past the end of a shift isn't overtime
   }
