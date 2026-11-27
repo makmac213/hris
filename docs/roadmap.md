@@ -11,6 +11,8 @@
 
 ## Next
 
+- **REST API** (`/api/v1`): built on `feature/api` against the in-memory store. Next, connect Supabase, then move the web screens onto the same services. See [api.md](api.md).
+
 - **Supabase:** auth, persistence, RLS, storage for photos, server-side payroll. See [architecture](architecture.md#moving-to-supabase).
 - **Payroll completeness:** remittance reports for SSS, PhilHealth and Pag-IBIG; BIR file formats (1601-C, alphalist DAT files, 2316 PDF); double holidays; hazard pay and service charges; a go-live import screen for year-to-date figures; bank file export; payslip PDF. Full list in the [compliance audit](payroll-compliance-audit.md#not-covered-yet).
 - **Leave:** maternity leave SSS reimbursement tracking; leave calendars for teams; half-day morning or afternoon choice.

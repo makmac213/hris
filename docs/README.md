@@ -6,6 +6,7 @@ All planning and documentation for the project lives here. Start with the roadma
 | --- | --- |
 | [Roadmap](roadmap.md) | What's built, what's next and the known gaps |
 | [Architecture](architecture.md) | Code structure, the data layer and the plan for moving to Supabase |
+| [REST API](api.md) | `/api/v1`: auth, API keys, conventions, resources and the rollout plan |
 | [Design system](design-system.md) | Type, colour, shape, spacing and motion |
 | [Design critique](design-critique.md) | Each review against impeccable.style, with the findings and fixes |
 | [Payroll rules](payroll-rules.md) | Philippine labor and tax rules the payroll follows, with sources |
