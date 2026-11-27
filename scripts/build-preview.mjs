@@ -17,7 +17,7 @@ const out = await build({
     "next/link": path.join(root, "preview/shims/link.tsx"),
     "next/navigation": path.join(root, "preview/shims/navigation.ts"),
   },
-  define: { "process.env.NODE_ENV": '"production"' },
+  define: { "process.env.NODE_ENV": '"production"', "process.env.NEXT_PUBLIC_DEMO_FALLBACKS": '"true"' },
 });
 const js = out.outputFiles[0].text.replace(/<\/script/gi, "<\\/script");
 const css = await readFile(path.join(root, "styles/globals.css"), "utf8");

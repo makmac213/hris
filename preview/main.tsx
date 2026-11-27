@@ -8,6 +8,9 @@ import { ProfileView } from "@/features/profile/ProfileView";
 import { OrgChartView } from "@/features/org/OrgChartView";
 import { OnboardingListView } from "@/features/onboarding/OnboardingListView";
 import { OnboardingCaseView } from "@/features/onboarding/OnboardingCaseView";
+import { AttendanceView } from "@/features/time/AttendanceView";
+import { ShiftCodesView } from "@/features/time/ShiftCodesView";
+import { MyTimeView } from "@/features/time/MyTimeView";
 import { usePathname } from "./shims/navigation";
 
 function Routes() {
@@ -19,6 +22,9 @@ function Routes() {
   else if (parts[0] === "onboarding" && parts[1]) view = <OnboardingCaseView key={parts[1]} id={parts[1]} />;
   else if (parts[0] === "onboarding") view = <OnboardingListView />;
   else if (parts[0] === "org-chart") view = <OrgChartView />;
+  else if (parts[0] === "time" && parts[1] === "shift-codes") view = <ShiftCodesView />;
+  else if (parts[0] === "time") view = <AttendanceView />;
+  else if (parts[0] === "my-time") view = <MyTimeView />;
   else view = <DirectoryView />;
   return <AppShell>{view}</AppShell>;
 }

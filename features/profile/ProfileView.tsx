@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
-import { caseSummary, directReports, indexById, reportingChain, today, updateEmployee, useDb } from "@/lib/store";
+import { caseSummary, directReports, indexById, reportingChain, today, updateEmployee, useCurrentUser, useDb } from "@/lib/store";
+import { shiftHours } from "@/lib/time";
 import { displayName, employmentTypeLabel, formatBytes, formatDate, legalName, statusLabel, tenure } from "@/lib/format";
 import type { Employee, EmploymentStatus } from "@/lib/types";
 import { Avatar, Button, Dialog, EmptyState, Field, Icon, PersonCell, Progress, StatusBadge } from "@/components/ui";
@@ -16,6 +17,7 @@ const eventLabel: Record<string, string> = {
 
 export function ProfileView({ id }: { id: string }) {
   const db = useDb();
+  const { canManage, employee: viewer } = useCurrentUser();
   const [tab, setTab] = useState<Tab>("overview");
   const [editing, setEditing] = useState(false);
   const deps = useMemo(() => indexById(db.departments), [db.departments]);
@@ -43,6 +45,8 @@ export function ProfileView({ id }: { id: string }) {
   const summary = kase ? caseSummary(db, kase) : null;
   const events = db.employment_events.filter((ev) => ev.employee_id === e.id).sort((a, b) => b.effective_date.localeCompare(a.effective_date));
   const docs = db.employee_documents.filter((d) => d.employee_id === e.id);
+  const shift = db.shift_codes.find((s) => s.id === e.shift_code_id);
+  const canSeeDocs = canManage || viewer.id === e.id;
   const localTime = loc && !loc.is_remote
     ? new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: loc.timezone }).format(new Date())
     : null;
@@ -65,11 +69,11 @@ export function ProfileView({ id }: { id: string }) {
         </div>
         <div className="profile-actions">
           <StatusBadge status={e.status} />
-          <Button icon="pencil" onClick={() => setEditing(true)}>Edit details</Button>
+          {canManage && <Button icon="pencil" onClick={() => setEditing(true)}>Edit details</Button>}
         </div>
       </header>
 
-      {summary && (
+      {summary && canManage && (
         <section className="notice" aria-label="Onboarding progress">
           <div className="notice-text">
             <strong>{e.start_date > today() ? `Starts ${formatDate(e.start_date)}` : `Started ${formatDate(e.start_date)}`}</strong>
@@ -84,7 +88,7 @@ export function ProfileView({ id }: { id: string }) {
       )}
 
       <div className="tabs" role="tablist" aria-label="Profile sections">
-        {(["overview", "employment", "documents"] as Tab[]).map((t) => (
+        {(["overview", "employment", "documents"] as Tab[]).filter((t) => t !== "documents" || canSeeDocs).map((t) => (
           <button
             key={t}
             type="button"
@@ -110,6 +114,13 @@ export function ProfileView({ id }: { id: string }) {
                 <div><dt>Department</dt><dd>{dept?.name ?? "—"}</dd></div>
                 <div><dt>Employment type</dt><dd>{employmentTypeLabel[e.employment_type]}</dd></div>
                 <div><dt>Start date</dt><dd>{formatDate(e.start_date)} <span className="muted">· {tenure(e.start_date, today())}</span></dd></div>
+                <div>
+                  <dt>Shift code</dt>
+                  <dd>
+                    {shift ? <><span className="code">{shift.code}</span> <span className="muted num">· {shiftHours(shift)}</span></> : <span className="muted">Not assigned</span>}
+                    {canManage && <> · <button type="button" className="link" onClick={() => setEditing(true)}>{shift ? "Change" : "Assign"}</button></>}
+                  </dd>
+                </div>
                 <div><dt>Location</dt><dd>{loc?.name ?? "—"}{localTime && <span className="muted" suppressHydrationWarning> · {localTime} local time</span>}</dd></div>
                 {e.end_date && <div><dt>Last day</dt><dd>{formatDate(e.end_date)}</dd></div>}
               </dl>
@@ -180,7 +191,7 @@ export function ProfileView({ id }: { id: string }) {
         </section>
       )}
 
-      {tab === "documents" && (
+      {tab === "documents" && canSeeDocs && (
         <section className="panel panel-flush" role="tabpanel" id="panel-documents" aria-labelledby="tab-documents">
           <table className="table">
             <thead><tr><th>Name</th><th className="col-md">Category</th><th className="col-md">Uploaded</th><th className="num">Size</th></tr></thead>
@@ -214,6 +225,7 @@ function EditDialog({ employee, onClose }: { employee: Employee; onClose: () => 
     manager_id: employee.manager_id ?? "",
     phone: employee.phone ?? "",
     status: employee.status,
+    shift_code_id: employee.shift_code_id ?? "",
   });
   const [error, setError] = useState("");
   const set = (k: keyof typeof f, v: string) => { setF({ ...f, [k]: v }); setError(""); };
@@ -241,6 +253,7 @@ function EditDialog({ employee, onClose }: { employee: Employee; onClose: () => 
       manager_id: f.manager_id || null,
       phone: f.phone.trim() || null,
       status: f.status,
+      shift_code_id: f.shift_code_id || null,
     });
     onClose();
   };
@@ -286,6 +299,18 @@ function EditDialog({ employee, onClose }: { employee: Employee; onClose: () => 
             </select>
           )}
         </Field>
+        <div className="span-2">
+          <Field label="Shift code" hint="Sets the hours their time records are checked against.">
+            {(id, d) => (
+              <select id={id} aria-describedby={d} value={f.shift_code_id} onChange={(e) => set("shift_code_id", e.target.value)}>
+                <option value="">No shift code (time not tracked)</option>
+                {db.shift_codes.filter((s) => !s.archived_at || s.id === f.shift_code_id).map((s) => (
+                  <option key={s.id} value={s.id}>{s.code} · {shiftHours(s)}</option>
+                ))}
+              </select>
+            )}
+          </Field>
+        </div>
         <Field label="Preferred name" hint="Shown across Halden instead of their first name.">
           {(id, d) => <input id={id} aria-describedby={d} value={f.preferred_name} onChange={(e) => set("preferred_name", e.target.value)} />}
         </Field>
